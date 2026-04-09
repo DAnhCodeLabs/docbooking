@@ -1,14 +1,16 @@
 import DoctorCard from "@/components/DoctorCard";
 import DoctorDetailModal from "@/components/DoctorDetailModal";
 import DoctorFilterSidebar from "@/components/DoctorFilterSidebar";
+import { httpGet } from "@/services/http";
 import {
   CheckCircleFilled,
   FilterOutlined,
   StarFilled,
 } from "@ant-design/icons";
 import { Button, Drawer, Empty, Pagination, Select, Skeleton } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TbShieldCheckFilled } from "react-icons/tb";
+import { useSearchParams } from "react-router-dom";
 import { publicApi } from "./publicApi";
 
 const { Option } = Select;
@@ -22,10 +24,12 @@ const DoctorsPage = () => {
 
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
-  // STATE MỚI: QUẢN LÝ MODAL XEM CHI TIẾT
   const [selectedDoctorDetail, setSelectedDoctorDetail] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Cache rating theo doctorId
+  const [ratingCache, setRatingCache] = useState({});
 
   const [pagination, setPagination] = useState({
     current: 1,
@@ -33,6 +37,7 @@ const DoctorsPage = () => {
     total: 0,
   });
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState({
     search: "",
     specialty: null,
@@ -43,9 +48,7 @@ const DoctorsPage = () => {
 
   const getSortedDoctors = (list, sortKey) => {
     if (!list || list.length === 0) return list;
-
-    const sorted = [...list]; // tạo bản sao để không mutate state gốc
-
+    const sorted = [...list];
     switch (sortKey) {
       case "experience_desc":
         return sorted.sort((a, b) => (b.experience || 0) - (a.experience || 0));
@@ -82,10 +85,36 @@ const DoctorsPage = () => {
     fetchInitialData();
   }, []);
 
-  const fetchDoctors = async (
-    page = pagination.current,
-    currentFilters = filters,
-  ) => {
+  useEffect(() => {
+    const searchFromUrl = searchParams.get("search");
+    if (searchFromUrl && filters.search !== searchFromUrl) {
+      setFilters((prev) => ({ ...prev, search: searchFromUrl }));
+      setPagination((prev) => ({ ...prev, current: 1 }));
+    }
+  }, [searchParams]);
+
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      fetchDoctors(pagination.current, filters);
+    }
+  }, []);
+
+  const updateUrl = (newFilters) => {
+    const params = new URLSearchParams();
+    if (newFilters.search) params.set("search", newFilters.search);
+    if (newFilters.specialty) params.set("specialty", newFilters.specialty);
+    if (newFilters.clinicId) params.set("clinicId", newFilters.clinicId);
+    if (newFilters.priceRange && newFilters.priceRange[0] > 0)
+      params.set("minPrice", newFilters.priceRange[0]);
+    if (newFilters.priceRange && newFilters.priceRange[1] < 2000000)
+      params.set("maxPrice", newFilters.priceRange[1]);
+    if (newFilters.experience) params.set("experience", newFilters.experience);
+    setSearchParams(params, { replace: true });
+  };
+
+  const fetchDoctors = async (page, currentFilters) => {
     setLoading(true);
     try {
       const params = {
@@ -94,7 +123,6 @@ const DoctorsPage = () => {
         search: currentFilters.search || undefined,
         specialty: currentFilters.specialty || undefined,
       };
-
       if (currentFilters.priceRange && currentFilters.priceRange.length === 2) {
         params.minPrice = currentFilters.priceRange[0];
         params.maxPrice = currentFilters.priceRange[1];
@@ -104,23 +132,47 @@ const DoctorsPage = () => {
       if (currentFilters.clinicId) params.clinicId = currentFilters.clinicId;
 
       const res = await publicApi.getDoctors(params);
-
-      setDoctors(res?.doctors || []);
+      const doctorsData = res?.doctors || [];
+      setDoctors(doctorsData);
       setPagination((prev) => ({
         ...prev,
         current: page,
         total: res?.total || 0,
       }));
+
+      // Fetch rating cho từng bác sĩ (cache theo doctorId)
+      // Lấy userId từ doctor.user?._id, nếu không có thì bỏ qua (rating = 0)
+      const ratingPromises = doctorsData.map(async (doctor) => {
+        const userId = doctor.user?._id;
+        if (!userId) return { id: null, rating: 0 }; // không có user → rating 0
+        if (ratingCache[userId])
+          return { id: userId, rating: ratingCache[userId] };
+        try {
+          const reviewRes = await httpGet(`/reviews/doctors/${userId}`, {
+            page: 1,
+            limit: 1,
+          });
+          return { id: userId, rating: reviewRes.averageRating || 0 };
+        } catch {
+          return { id: userId, rating: 0 };
+        }
+      });
+      const ratings = await Promise.all(ratingPromises);
+      const newCache = { ...ratingCache };
+      ratings.forEach((r) => {
+        if (r.id) newCache[r.id] = r.rating;
+      });
+      setRatingCache(newCache);
     } catch (error) {
+      console.error("Lỗi fetch bác sĩ:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDoctors(pagination.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pagination.current, pagination.pageSize]);
+    fetchDoctors(pagination.current, filters);
+  }, [filters, pagination.current, pagination.pageSize]);
 
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -128,7 +180,7 @@ const DoctorsPage = () => {
 
   const handleSearch = () => {
     fetchDoctors(1, filters);
-    // Đóng Drawer trên Mobile sau khi bấm tìm kiếm
+    updateUrl(filters);
     setMobileFilterOpen(false);
   };
 
@@ -142,17 +194,16 @@ const DoctorsPage = () => {
     };
     setFilters(defaultFilters);
     fetchDoctors(1, defaultFilters);
-    // Có thể không đóng Drawer để user chọn tiếp, hoặc đóng luôn tùy ý. Ở đây giữ mở để user thấy đã reset.
+    setSearchParams({}, { replace: true });
   };
 
   const handleOpenDetailModal = async (doctorId) => {
     setLoadingDetail(true);
     try {
-      const response = await publicApi.getDoctorById(doctorId); // Gọi API chi tiết
-      setSelectedDoctorDetail(response); // response là object bác sĩ đầy đủ
+      const response = await publicApi.getDoctorById(doctorId);
+      setSelectedDoctorDetail(response);
       setIsDetailModalOpen(true);
     } catch (error) {
-      // Xử lý lỗi (có thể thông báo)
       console.error("Lỗi khi lấy chi tiết bác sĩ:", error);
     } finally {
       setLoadingDetail(false);
@@ -162,7 +213,6 @@ const DoctorsPage = () => {
   return (
     <div className="bg-[#f8fafc] min-h-screen pb-16">
       {/* ================= BANNER HERO ================= */}
-      {/* Code Banner giữ nguyên hoàn toàn như cũ... */}
       <div className="relative bg-[#022c43] pt-20 pb-24 lg:pt-28 lg:pb-32 overflow-hidden mb-8 lg:mb-12 border-b border-blue-900/50">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-size-[32px_32px]"></div>
         <div className="absolute top-[-20%] left-[-10%] w-150 h-150 bg-cyan-500/20 rounded-full blur-[120px] pointer-events-none"></div>
@@ -175,20 +225,17 @@ const DoctorsPage = () => {
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
                 Nền tảng Y tế Chuyên sâu
               </div>
-
               <h1 className="text-4xl md:text-5xl lg:text-[56px] font-black text-white tracking-tight mb-6 leading-[1.15]">
                 Đội ngũ Chuyên gia <br className="hidden md:block" />
                 <span className="text-transparent bg-clip-text bg-linear-to-r from-cyan-400 to-blue-300">
                   & Y Bác sĩ Hàng đầu
                 </span>
               </h1>
-
               <p className="text-blue-100/80 text-lg md:text-xl mb-10 leading-relaxed font-medium max-w-xl mx-auto lg:mx-0">
                 Tiếp cận mạng lưới hơn 500+ bác sĩ giỏi, chuyên gia y tế giàu
                 kinh nghiệm từ các bệnh viện tuyến đầu. Đặt lịch nhanh chóng, an
                 toàn và bảo mật.
               </p>
-
               <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-8 gap-y-5">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center border border-white/10 shadow-inner">
@@ -222,15 +269,12 @@ const DoctorsPage = () => {
             <div className="hidden lg:block relative z-10 w-full max-w-md animate-fade-in">
               <div className="absolute -top-8 -right-8 w-24 h-24 border border-white/10 rounded-full"></div>
               <div className="absolute -bottom-6 -left-6 w-16 h-16 border border-cyan-400/20 rounded-full"></div>
-
               <div className="bg-[#0f172a]/50 backdrop-blur-xl border border-white/10 p-8 rounded-4xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl"></div>
-
                 <h3 className="text-white text-lg font-bold mb-6 flex items-center gap-2">
                   <CheckCircleFilled className="text-cyan-400!" />
                   Thống kê Nền tảng
                 </h3>
-
                 <div className="space-y-5">
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 transition-colors hover:bg-white/10">
                     <div className="text-4xl font-black text-transparent bg-clip-text bg-linear-to-r from-emerald-400 to-cyan-400">
@@ -245,7 +289,6 @@ const DoctorsPage = () => {
                       </div>
                     </div>
                   </div>
-
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-5 transition-colors hover:bg-white/10">
                     <div className="flex justify-between items-end mb-3">
                       <div>
@@ -287,13 +330,10 @@ const DoctorsPage = () => {
           </div>
         </div>
       </div>
-      {/* ================= KẾT THÚC BANNER ================= */}
 
       {/* ================= MAIN CONTENT ================= */}
       <div className="max-w-350 mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* CỘT TRÁI: DESKTOP SIDEBAR */}
-          {/* Trên màn hình nhỏ (dưới lg) sẽ bị hidden đi */}
           <div className="hidden lg:block w-80 shrink-0 animate-fade-in-left">
             <DoctorFilterSidebar
               specialties={specialties}
@@ -306,9 +346,7 @@ const DoctorsPage = () => {
             />
           </div>
 
-          {/* CỘT PHẢI: DANH SÁCH KẾT QUẢ */}
           <div className="flex-1 min-w-0">
-            {/* Toolbar (Mobile có thêm nút Filter) */}
             <div className="bg-white p-4 rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-slate-100 mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">
               <div className="text-slate-600 font-medium px-2 self-start sm:self-center">
                 {loading ? (
@@ -323,27 +361,22 @@ const DoctorsPage = () => {
                   </span>
                 )}
               </div>
-
-              {/* Các thao tác (Filter Mobile & Sort) */}
               <div className="flex items-center gap-3 w-full sm:w-auto">
-                {/* Nút bật Filter trên Mobile */}
                 <Button
-                  className="lg:hidden! flex! items-center! justify-center! flex-1! sm:flex-none!  h-10! font-semibold! text-blue-600! border-blue-200! bg-blue-50!"
+                  className="lg:hidden! flex! items-center! justify-center! flex-1! sm:flex-none! h-10! font-semibold! text-blue-600! border-blue-200! bg-blue-50!"
                   icon={<FilterOutlined />}
                   onClick={() => setMobileFilterOpen(true)}
                 >
                   Lọc kết quả
                 </Button>
-
-                {/* Sắp xếp */}
                 <div className="flex items-center gap-2 flex-1 sm:flex-none">
                   <span className="text-sm text-slate-500 font-medium hidden sm:block">
                     Sắp xếp:
                   </span>
                   <Select
-                    value={sortBy} // liên kết với state
-                    className="w-full! sm:w-48!  h-10!"
-                    onChange={(val) => setSortBy(val)} // cập nhật state
+                    value={sortBy}
+                    className="w-full! sm:w-48! h-10!"
+                    onChange={(val) => setSortBy(val)}
                   >
                     <Option value="experience_desc">
                       Kinh nghiệm (Nhiều nhất)
@@ -358,7 +391,6 @@ const DoctorsPage = () => {
               </div>
             </div>
 
-            {/* List Bác sĩ */}
             <div className="flex flex-col gap-6">
               {loading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
@@ -392,6 +424,7 @@ const DoctorsPage = () => {
                     <DoctorCard
                       doctor={doctor}
                       onViewDetail={handleOpenDetailModal}
+                      avgRating={ratingCache[doctor.user?._id] || 0}
                     />
                   </div>
                 ))
@@ -421,11 +454,11 @@ const DoctorsPage = () => {
                   current={pagination.current}
                   pageSize={pagination.pageSize}
                   total={pagination.total}
-                  onChange={(page, pageSize) =>
-                    setPagination({ ...pagination, current: page, pageSize })
-                  }
+                  onChange={(page, pageSize) => {
+                    setPagination({ ...pagination, current: page, pageSize });
+                    fetchDoctors(page, filters);
+                  }}
                   showSizeChanger
-                  className="bg-white! px-4! py-2!  shadow-sm! border! border-slate-100!"
                 />
               </div>
             )}
@@ -433,7 +466,6 @@ const DoctorsPage = () => {
         </div>
       </div>
 
-      {/* ================= MOBILE FILTER DRAWER ================= */}
       <Drawer
         title={
           <div className="flex items-center gap-2">
@@ -443,11 +475,11 @@ const DoctorsPage = () => {
             </span>
           </div>
         }
-        placement="left" // Mở từ trái sang theo thói quen lướt web mobile
+        placement="left"
         width={320}
         onClose={() => setMobileFilterOpen(false)}
         open={mobileFilterOpen}
-        styles={{ body: { padding: 0, backgroundColor: "#f8fafc" } }} // Xóa padding mặc định để component con tự handle
+        styles={{ body: { padding: 0, backgroundColor: "#f8fafc" } }}
       >
         <DoctorFilterSidebar
           specialties={specialties}
@@ -456,13 +488,15 @@ const DoctorsPage = () => {
           onFilterChange={handleFilterChange}
           onSearch={handleSearch}
           onReset={handleReset}
-          isMobile={true} // Báo cho component con biết nó đang nằm trong Drawer
+          isMobile={true}
         />
       </Drawer>
+
       <DoctorDetailModal
         visible={isDetailModalOpen}
         doctor={selectedDoctorDetail}
         onClose={() => setIsDetailModalOpen(false)}
+        avgRating={ratingCache[selectedDoctorDetail?.user?._id] || 0}
       />
     </div>
   );

@@ -3,6 +3,8 @@ import { protect, restrictTo } from "../../middlewares/auth.js";
 import validate from "../../middlewares/validate.js";
 import * as adminValidation from "./admin.validation.js";
 import * as adminController from "./admin.controller.js";
+import * as dashboardController from "./dashboard/dashboard.controller.js";
+import { dashboardQuerySchema } from "./dashboard/dashboard.validation.js";
 
 const router = express.Router();
 
@@ -42,12 +44,11 @@ router
     adminController.softDeleteUser,
   );
 
-// Xóa cứng
-router
-  .route("/users/:id/hard")
-  .delete(
-    validate(adminValidation.userIdParamSchema),
-    adminController.hardDeleteUser,
+
+  router.get(
+    "/dashboard",
+    validate(dashboardQuerySchema),
+    dashboardController.getDashboard,
   );
 
 export default router;

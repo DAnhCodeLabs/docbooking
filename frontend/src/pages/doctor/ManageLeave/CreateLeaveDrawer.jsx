@@ -1,3 +1,4 @@
+import { getTodayUTC } from "@/utils/date";
 import {
   CalendarOutlined,
   ClockCircleOutlined,
@@ -36,14 +37,14 @@ const schema = z
     reason: z.string().optional(),
   })
   .refine(
-    (data) =>
-      dayjs(data.date)
-        .startOf("day")
-        .isAfter(dayjs().startOf("day").subtract(1, "day")),
-    {
-      message: "Không thể chọn ngày trong quá khứ",
-      path: ["date"],
+    (data) => {
+      // FIX: Compare Date objects instead of dayjs objects
+      // getTodayUTC() now returns Date object (at 00:00:00 UTC)
+      const selectedDate = dayjs.utc(data.date).startOf("day").toDate();
+      const today = getTodayUTC(); // Date object
+      return selectedDate >= today; // Date comparison
     },
+    { message: "Không thể chọn ngày trong quá khứ", path: ["date"] },
   );
 
 const CreateLeaveDrawer = ({ visible, onClose, onSuccess }) => {

@@ -9,72 +9,41 @@ import { createServer } from "http";
 import { StatusCodes } from "http-status-codes";
 import mongoose from "mongoose";
 import morgan from "morgan";
-import { Server } from "socket.io";
 import { z } from "zod";
 import connectDB from "./src/config/db.js";
+import { startCleanupPendingPayments } from "./src/cron/cleanupPendingPayments.js";
 import { startUnbanCronJob } from "./src/cron/unbanCron.js";
 import errorHandler from "./src/middlewares/errorHandler.js";
 import notFound from "./src/middlewares/notFound.js";
 import adminDoctorRoutes from "./src/modules/admin/admin.doctor.routes.js";
 import adminAuthRoutes from "./src/modules/admin/admin.routes.js";
+import { removeSlotIndex } from "./src/modules/appointment/appointment.init.js";
 import appointmentRoutes from "./src/modules/appointment/appointment.routes.js";
 import authRoutes from "./src/modules/auth/auth.routes.js";
 import clinicLeadRoutes from "./src/modules/clinicLead/clinicLead.routes.js";
+import clinicDashboardRoutes from "./src/modules/dashboard/clinicDashboard/clinicDashboard.routes.js";
 import doctorRoutes from "./src/modules/doctor/doctor.routes.js";
 import leaveRoutes from "./src/modules/leave/leave.routes.js";
 import medicalRecordRoutes from "./src/modules/medicalRecord/medicalRecord.routes.js";
+import paymentRoutes from "./src/modules/payment/payment.routes.js";
 import scheduleRoutes from "./src/modules/schedule/schedule.routes.js";
 import specialtyRoutes from "./src/modules/specialty/specialty.routes.js";
 import ApiError from "./src/utils/ApiError.js"; // Thêm import ApiError
-import { verifyAccessToken } from "./src/utils/jwt.js";
 import sendSuccess from "./src/utils/response.js";
+import reviewRoutes from "./src/modules/review/review.routes.js";
+
 
 dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
 
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "http://10.139.215.207:3000",
-];
-
-// Cấu hình Socket.io
-const io = new Server(httpServer, {
-  cors: {
-    origin: allowedOrigins,
-    credentials: true,
-  },
-});
-
-io.use((socket, next) => {
-  try {
-    // Client cần gửi token qua auth payload: const socket = io(url, { auth: { token: '...' } });
-    const token = socket.handshake.auth?.token;
-    if (!token) {
-      return next(new Error("Truy cập bị từ chối. Không tìm thấy token."));
-    }
-
-    // Xác thực token và gán thông tin user vào instance của socket
-    const decoded = verifyAccessToken(token);
-    socket.user = decoded;
-
-    next(); // Cho phép kết nối
-  } catch (error) {
-    return next(new Error("Token không hợp lệ hoặc đã hết hạn."));
-  }
-});
-
-io.on("connection", (socket) => {
-  console.log(
-    `[SOCKET]: 🟢 User ${socket.user.id} đã kết nối (Socket ID: ${socket.id})`,
-  );
-
-  socket.on("disconnect", () => {
-    console.log(`[SOCKET]: 🔴 User ${socket.user.id} đã ngắt kết nối`);
-  });
-});
+// const allowedOrigins = [
+//   process.env.CLIENT_URL_LOCAL,
+//   process.env.CLIENT_URL_LAN,
+//   process.env.CLIENT_URL_NGROK,
+//   "http://127.0.0.1:3000",
+// ].filter(Boolean);
 
 // ==================== MIDDLEWARE ====================
 
@@ -86,8 +55,24 @@ app.use(helmet());
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Cho phép request không có origin (ví dụ: mobile app, curl) hoặc nằm trong danh sách
-      if (!origin || allowedOrigins.includes(origin)) {
+      const allowed = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(",").map((u) => u.trim())
+        : [];
+
+      if (process.env.NODE_ENV === "development") {
+        if (!origin) return callback(null, true);
+        if (
+          origin.includes(".ngrok-free.dev") || // ← Ngrok 2026
+          origin.startsWith("http://192.168.") ||
+          origin.startsWith("http://10.") ||
+          origin.includes("localhost") ||
+          origin.includes("127.0.0.1")
+        ) {
+          return callback(null, true);
+        }
+      }
+
+      if (!origin || allowed.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error("Bị chặn bởi CORS"));
@@ -178,6 +163,9 @@ app.use("/api/schedules", scheduleRoutes);
 app.use("/api/leaves", leaveRoutes);
 app.use("/api/medical-records", medicalRecordRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/clinic-admin", clinicDashboardRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 // ==================== XỬ LÝ 404 VÀ LỖI ====================
 
@@ -192,13 +180,15 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     await connectDB();
+    await removeSlotIndex();
     startUnbanCronJob();
+    startCleanupPendingPayments();
     const PORT = process.env.PORT || 8000;
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(
         `Server running on port ${PORT} (${process.env.NODE_ENV} mode)`,
       );
-      console.log(`→ Truy cập từ mạng LAN: http://10.139.215.207:${PORT}`);
+      console.log(`→ Truy cập từ mạng LAN: http://192.168.1.4:${PORT}`);
     });
   } catch (error) {
     console.error("Failed to start server:", error);
@@ -239,6 +229,3 @@ const gracefulShutdown = (signal) => {
 
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-
-// Export io để sử dụng ở các module khác
-export { io };

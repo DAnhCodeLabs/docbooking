@@ -26,4 +26,5 @@ export const bookingApi = {
 
   // Tạo cuộc hẹn
   createAppointment: (data) => httpPost("/appointments", data),
+  checkin: (id) => httpPost(`/appointments/${id}/checkin`, {}),
 };

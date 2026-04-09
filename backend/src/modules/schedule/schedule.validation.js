@@ -79,25 +79,29 @@ export const toggleSlotSchema = z.object({
 
 // Bổ sung vào cuối file src/modules/schedule/schedule.validation.js
 
-export const getSchedulesSchema = z.object({
-  query: z.object({
-    page: z.string().optional(),
-    limit: z.string().optional(),
-    doctorId: z
-      .string()
-      .regex(/^[0-9a-fA-F]{24}$/, "ID Bác sĩ không hợp lệ")
-      .optional(),
-    startDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Sai định dạng YYYY-MM-DD")
-      .optional(),
-    endDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Sai định dạng YYYY-MM-DD")
-      .optional(),
-    sort: z.string().optional().default("-date"), // Mặc định sắp xếp ngày mới nhất lên đầu
-  }),
-});
+export const getSchedulesSchema = z
+  .object({
+    query: z.object({
+      page: z.string().optional(),
+      limit: z.string().optional(),
+      doctorId: z
+        .string()
+        .regex(/^[0-9a-fA-F]{24}$/, "ID Bác sĩ không hợp lệ")
+        .optional(),
+      startDate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Sai định dạng YYYY-MM-DD")
+        .optional(),
+      endDate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Sai định dạng YYYY-MM-DD")
+        .optional(),
+      includeSlots: z.enum(["true", "false"]).optional().default("false"),
+      sort: z.string().optional().default("-date"),
+    }),
+  })
+  .refine((data) => {
+  });
 
 export const getScheduleSlotsSchema = z.object({
   params: z.object({

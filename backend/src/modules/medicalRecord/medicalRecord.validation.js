@@ -1,9 +1,14 @@
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
 import { z } from "zod";
+import { parseDateToUTC } from "../../utils/date.js";
+
+dayjs.extend(utc);
 
 const dateStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Sai định dạng YYYY-MM-DD")
-  .transform((str) => new Date(str));
+  .transform((str) => parseDateToUTC(str));
 
 export const createMedicalRecordSchema = z.object({
   body: z.object({
@@ -18,6 +23,11 @@ export const createMedicalRecordSchema = z.object({
       .min(9, "CCCD phải có ít nhất 9 ký tự")
       .max(12, "CCCD tối đa 12 ký tự")
       .trim(),
+    cccdIssueDate: z
+      .string()
+      .optional()
+      .transform((str) => (str ? parseDateToUTC(str) : null)),
+    cccdIssuePlace: z.string().optional(),
     address: z.string().optional(),
     insurance: z
       .object({
@@ -26,7 +36,9 @@ export const createMedicalRecordSchema = z.object({
         expiryDate: z
           .string()
           .optional()
-          .transform((str) => (str ? new Date(str) : undefined)),
+          .transform((str) =>
+            str ? dayjs.utc(str).startOf("day").toDate() : undefined,
+          ),
       })
       .optional(),
     bloodGroup: z
@@ -50,6 +62,11 @@ export const updateMedicalRecordSchema = z.object({
     dateOfBirth: dateStringSchema.optional(),
     gender: z.enum(["male", "female", "other"]).optional(),
     cccd: z.string().min(9).max(12).trim().optional(),
+    cccdIssueDate: z
+      .string()
+      .optional()
+      .transform((str) => (str ? parseDateToUTC(str) : null)),
+    cccdIssuePlace: z.string().optional(),
     address: z.string().optional(),
     insurance: z
       .object({
@@ -58,7 +75,9 @@ export const updateMedicalRecordSchema = z.object({
         expiryDate: z
           .string()
           .optional()
-          .transform((str) => (str ? new Date(str) : undefined)),
+          .transform((str) =>
+            str ? dayjs.utc(str).startOf("day").toDate() : undefined,
+          ),
       })
       .optional(),
     bloodGroup: z

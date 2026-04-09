@@ -1,4 +1,3 @@
-
 import dotenv from "dotenv";
 import connectDB from "../config/db.js";
 import User from "../models/User.js";
@@ -12,7 +11,7 @@ const createAdmin = async () => {
 
     const adminData = {
       email: "admin@admin.com",
-      password: "Admin123", // sẽ được hash tự động qua pre-save
+      password: "Anh123", // sẽ được hash tự động qua pre-save
       fullName: "Admin",
       role: "admin",
       status: "active",

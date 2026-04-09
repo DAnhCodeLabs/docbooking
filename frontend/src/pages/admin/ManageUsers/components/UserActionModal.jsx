@@ -1,4 +1,5 @@
 import { Modal } from "@/components/common"; // Sử dụng Common Component
+import { getTodayUTC } from "@/utils/date";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { DatePicker, Input, Typography, message } from "antd";
 import dayjs from "dayjs";
@@ -100,7 +101,7 @@ const UserActionModal = ({ visible, type, user, onConfirm, onCancel }) => {
                 value={banUntil}
                 onChange={(date) => setBanUntil(date)}
                 disabledDate={(current) =>
-                  current && current < dayjs().startOf("day")
+                  current && dayjs(getTodayUTC()).isAfter(current, "day")
                 }
                 className="w-full rounded-lg h-10"
                 format="DD/MM/YYYY"

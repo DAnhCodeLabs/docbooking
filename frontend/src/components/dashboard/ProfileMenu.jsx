@@ -1,11 +1,11 @@
-import { Dropdown, Avatar, Space, Typography } from "antd";
+import { useAuthStore } from "@/stores/authStore";
 import {
-  UserOutlined,
   LogoutOutlined,
   SettingOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
+import { Avatar, Dropdown, Space, Typography } from "antd";
 import { useNavigate } from "react-router-dom";
-import { useAuthStore } from "@/stores/authStore";
 
 const { Text } = Typography;
 
@@ -45,18 +45,24 @@ const ProfileMenu = () => {
   ];
 
   return (
-    <Dropdown menu={{ items }} placement="bottomRight" arrow trigger={['click']}>
-      <Space className="cursor-pointer transition-all duration-300">
+    <Dropdown
+      menu={{ items }}
+      placement="bottomRight"
+      arrow
+      trigger={["click"]}
+    >
+      <Space className="cursor-pointer! transition-all! duration-300! hover:bg-slate-50! p-1.5! md:p-2! rounded-xl!">
         <Avatar
-          className="bg-blue-600"
+          size="large"
+          className="bg-blue-600! border-2! border-white! shadow-sm!"
           icon={<UserOutlined />}
-          src={user?.avatar} // Sẽ ưu tiên hiển thị ảnh nếu user có ảnh avatar
+          src={user?.avatar}
         />
-        <div className="hidden md:flex flex-col leading-tight ml-1">
-          <Text className="text-slate-800! font-semibold text-[13px]">
+        <div className="hidden md:flex flex-col leading-tight ml-1 justify-center">
+          <Text className="text-slate-800! font-semibold! text-[14px]! m-0!">
             {user?.fullName || "Quản trị viên"}
           </Text>
-          <Text className="text-slate-400 text-[11px] uppercase tracking-wider font-medium">
+          <Text className="text-slate-400! text-[11px]! uppercase! tracking-wider! font-medium! mt-0.5!">
             {user?.role || "ADMIN"}
           </Text>
         </div>

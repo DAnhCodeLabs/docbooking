@@ -38,7 +38,7 @@ const StaffLoginPage = () => {
           ? "/admin/dashboard"
           : user.role === "doctor"
             ? "/doctor/dashboard"
-            : "/clinic_admin/dashboard",
+            : "/clinic_admin/clinic-dashboard",
       );
     } catch (error) {
       console.error("Login error:", error);

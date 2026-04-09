@@ -381,7 +381,6 @@ export const resetPassword = async (
   ipAddress,
   userAgent,
 ) => {
-  // Hash token nhận được từ client
   const hashedToken = crypto
     .createHash("sha256")
     .update(resetToken)
@@ -405,19 +404,32 @@ export const resetPassword = async (
     throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy người dùng.");
   }
 
+  // Kiểm tra trạng thái tài khoản trước khi đặt lại mật khẩu
+  if (user.status === "banned") {
+    throw new ApiError(
+      StatusCodes.FORBIDDEN,
+      "Tài khoản đã bị khóa. Không thể đặt lại mật khẩu. Vui lòng liên hệ quản trị viên.",
+    );
+  }
+
+  if (user.status === "inactive" && user.deactivatedAt) {
+    throw new ApiError(
+      StatusCodes.FORBIDDEN,
+      "Tài khoản đã bị vô hiệu hóa. Không thể đặt lại mật khẩu.",
+    );
+  }
+
   // Cập nhật mật khẩu mới
-  user.password = newPassword; // sẽ được hash qua middleware pre('save')
+  user.password = newPassword;
   user.requiresPasswordChange = false;
   await user.save();
 
-  // Đánh dấu token đã dùng
   tokenRecord.used = true;
   await tokenRecord.save();
 
-  // Xóa tất cả OTP password_reset cũ của user (phòng trường hợp còn sót)
+  // Xóa OTP cũ
   await Otp.deleteMany({ email: user.email, purpose: "password_reset" });
 
-  // Audit log
   await AuditLog.create({
     userId: user._id,
     action: "PASSWORD_RESET",
@@ -583,7 +595,7 @@ export const refreshAccessToken = async (
 ) => {
   let decoded;
   try {
-    decoded = verifyRefreshToken(refreshToken); // ✅ Gán decoded
+    decoded = verifyRefreshToken(refreshToken);
   } catch (error) {
     throw new ApiError(
       StatusCodes.UNAUTHORIZED,
@@ -611,34 +623,58 @@ export const refreshAccessToken = async (
     );
   }
 
-  // 3. Kiểm tra hết hạn
   if (tokenDoc.expiresAt < new Date()) {
     await RefreshToken.deleteOne({ _id: tokenDoc._id });
     throw new ApiError(StatusCodes.UNAUTHORIZED, "Refresh token đã hết hạn.");
   }
 
-  // 4. Tìm user
   const user = await User.findById(tokenDoc.user);
   if (!user || user.status === "banned") {
     throw new ApiError(StatusCodes.UNAUTHORIZED, "Người dùng không hợp lệ.");
   }
 
-  // 5. Tạo access token mới
+  // Tạo access token mới
   const newAccessToken = generateAccessToken(user._id, user.role);
 
-  // 7. Audit log
+  // Tạo refresh token mới (rotation)
+  const newRefreshToken = generateRefreshToken();
+  const hashedNewRefreshToken = crypto
+    .createHash("sha256")
+    .update(newRefreshToken)
+    .digest("hex");
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7); // 7 ngày
+
+  // Lưu refresh token mới
+  await RefreshToken.create({
+    token: hashedNewRefreshToken,
+    user: user._id,
+    expiresAt,
+    revoked: false,
+    replacedByToken: null,
+  });
+
+  // Revoke token cũ và ghi lại token thay thế
+  tokenDoc.revoked = true;
+  tokenDoc.replacedByToken = hashedNewRefreshToken;
+  await tokenDoc.save();
+
+  // Audit log
   await AuditLog.create({
     userId: user._id,
     action: "REFRESH_TOKEN",
     status: "SUCCESS",
     ipAddress,
     userAgent,
-    details: { email: user.email },
+    details: { email: user.email, rotated: true },
   });
 
-  logger.info(`Access token refreshed for ${user.email}`);
+  logger.info(
+    `Access token refreshed and refresh token rotated for ${user.email}`,
+  );
 
-  return { accessToken: newAccessToken };
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
 };
 
 // ==================== ĐĂNG XUẤT ====================

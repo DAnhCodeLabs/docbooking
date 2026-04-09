@@ -8,23 +8,41 @@ export default defineConfig({
     preflight: false,
   },
   plugins: [react(), tailwindcss()],
+
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
+
   server: {
-    host: true, // Mở kết nối mạng LAN
+    host: true, // Cho phép LAN + ngrok
     port: 3000,
     open: true,
     cors: true,
+
+    // Proxy tất cả /api về backend local (linh hoạt nhất)
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8000",
-        changeOrigin: true, //
+        changeOrigin: true,
+        secure: false,
       },
     },
+
+    // Fix lỗi "host not allowed" của ngrok
+    allowedHosts: [
+      "localhost",
+      "127.0.0.1",
+      ".ngrok-free.dev", // ← wildcard cho tất cả ngrok (rất tiện!)
+    ],
+
+    // HMR hoạt động tốt trên ngrok https
+    hmr: {
+      clientPort: 443,
+    },
   },
+
   optimizeDeps: {
     include: [
       "antd",
@@ -34,6 +52,7 @@ export default defineConfig({
       "react-router-dom",
     ],
   },
+
   build: {
     sourcemap: process.env.NODE_ENV !== "production",
   },

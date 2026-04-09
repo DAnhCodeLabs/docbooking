@@ -6,7 +6,16 @@ import ApiError from "../utils/ApiError.js";
  * Phân loại lỗi và trả về response phù hợp (tiếng Việt)
  */
 const errorHandler = (err, req, res, next) => {
-  // 1. Ghi log lỗi (có thể thay bằng logger chuyên dụng sau này)
+  // Nếu err là undefined hoặc null, tạo lỗi mặc định
+  if (!err) {
+    err = new ApiError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Lỗi không xác định, vui lòng thử lại.",
+      true,
+    );
+  }
+
+  // 1. Ghi log lỗi
   console.error("🔥 LỖI:", err);
 
   // 2. Khởi tạo biến error sẽ dùng để response

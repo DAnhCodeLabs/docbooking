@@ -41,6 +41,11 @@ export const adminMenu = [
     label: "Quản lý phòng khám",
   },
   {
+    key: "/admin/appointments",
+    icon: <ScheduleOutlined />,
+    label: "Quản lý lịch hẹn",
+  },
+  {
     key: "/admin/reports", // Sửa từ /dashboard/admin/reports
     icon: <BarChartOutlined />,
     label: "Báo cáo thống kê",
@@ -90,7 +95,7 @@ export const doctorMenu = [
 
 export const clinicMenu = [
   {
-    key: "/clinic_admin/dashboard",
+    key: "/clinic_admin/clinic-dashboard",
     icon: <DashboardOutlined />,
     label: "Dashboard",
   },
@@ -99,5 +104,10 @@ export const clinicMenu = [
     key: "/clinic_admin/doctors",
     icon: <CheckCircleOutlined />,
     label: "Quản lý bác sĩ",
+  },
+  {
+    key: "/clinic_admin/appointments",
+    icon: <ScheduleOutlined />,
+    label: "Quản lý lịch hẹn",
   },
 ];

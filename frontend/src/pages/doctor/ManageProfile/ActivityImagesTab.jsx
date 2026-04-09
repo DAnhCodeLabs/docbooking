@@ -65,8 +65,8 @@ const ActivityImagesTab = ({ images, onUpdate }) => {
         <UploadFile
           fileList={fileList}
           onChange={handleUpload}
-          maxCount={1}
-          multiple={false}
+          maxCount={5}
+          multiple={true}
           accept="image/*"
           listType="text"
           showUploadList={false}

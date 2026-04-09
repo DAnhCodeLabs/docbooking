@@ -132,7 +132,18 @@ export const refreshToken = asyncHandler(async (req, res) => {
     userAgent,
   );
 
-  sendSuccess(res, StatusCodes.OK, "Làm mới token thành công.", result);
+  // Set cookie mới với refresh token mới
+  res.cookie("refreshToken", result.refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+  });
+
+  // Chỉ trả về access token trong body
+  sendSuccess(res, StatusCodes.OK, "Làm mới token thành công.", {
+    accessToken: result.accessToken,
+  });
 });
 
 // ==================== ĐĂNG XUẤT ====================

@@ -10,7 +10,7 @@ const NotFound = () => {
     if (user?.role === "patient") return "/home";
     if (user?.role === "doctor") return "/doctor/dashboard";
     if (user?.role === "admin") return "/admin/dashboard";
-    if (user?.role === "clinic_admin") return "/clinic_admin/dashboard";
+    if (user?.role === "clinic_admin") return "/clinic_admin/clinic-dashboard";
     return "/auth/login";
   };
 

@@ -25,7 +25,7 @@ const PrivateRoute = ({ allowedRoles, children }) => {
     } else if (user?.role === "admin") {
       return <Navigate to="/admin/dashboard" replace />;
     } else if (user?.role === "clinic_admin") {
-      return <Navigate to="/clinic_admin/dashboard" replace />;
+      return <Navigate to="/clinic_admin/clinic-dashboard" replace />;
     } else {
       return <Navigate to="/auth/login" replace />;
     }

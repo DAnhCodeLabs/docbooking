@@ -1,10 +1,11 @@
 import Loading from "@/components/Loading";
+import { formatDateForBackend, getTodayUTC } from "@/utils/date";
 import { Alert, DatePicker, Typography } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { bookingApi } from "../bookingApi";
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const Step1DateTime = ({
   doctor,
@@ -25,12 +26,11 @@ const Step1DateTime = ({
     }
     setLoadingSlots(true);
     try {
+      const doctorUserId = doctor.user?._id || doctor._id;
       const response = await bookingApi.getSlotsByDoctorAndDate(
-        doctor._id,
-        date.format("YYYY-MM-DD"),
+        doctorUserId,
+        formatDateForBackend(date),
       );
-      // response có dạng { schedules: [...] }
-      // mỗi schedule có slots (mảng)
       const allSlots = response.schedules?.[0]?.slots || [];
       const availableSlots = allSlots.filter((s) => s.status === "available");
       setSlots(availableSlots);
@@ -43,59 +43,77 @@ const Step1DateTime = ({
 
   const handleSlotSelect = (slot) => {
     onSelectSlot({
-      scheduleId: slot.scheduleId, // backend có thể trả về scheduleId trong slot
+      scheduleId: slot.scheduleId,
       slotId: slot._id,
       startTime: slot.startTime,
       endTime: slot.endTime,
-      date: selectedDate.format("YYYY-MM-DD"),
+      date: formatDateForBackend(selectedDate),
     });
   };
 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
-        <Title level={4} className="mb-2! text-gray-800!">
-          1. Chọn ngày khám
+        <Title level={5} className="mb-3! text-gray-800! font-semibold!">
+          1. Chọn ngày bạn muốn khám
         </Title>
         <DatePicker
           value={selectedDate}
           onChange={handleDateChange}
           format="DD/MM/YYYY"
           size="large"
-          className="w-full!  border-gray-300!"
+          className="w-full! rounded-xl! border-gray-300! hover:border-blue-400! focus:border-blue-500!"
           disabledDate={(current) =>
-            current && current < dayjs().startOf("day")
+            current && dayjs(getTodayUTC()).isAfter(current, "day")
           }
-          placeholder="Vui lòng chọn ngày bạn muốn đến khám"
+          placeholder="VD: 20/11/2026"
         />
       </div>
 
       {selectedDate && (
         <div className="animate-fade-in">
-          <Title level={4} className="mb-4! text-gray-800!">
-            2. Chọn giờ khám
-          </Title>
+          <div className="flex items-center justify-between mb-3">
+            <Title level={5} className="m-0! text-gray-800! font-semibold!">
+              2. Khung giờ khả dụng
+            </Title>
+            <Text className="text-xs! text-gray-400!">
+              {slots.length} ca trống
+            </Text>
+          </div>
+
           {loadingSlots ? (
-            <div className="text-center py-8">
+            <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-100">
               <Loading />
             </div>
           ) : slots.length === 0 ? (
-            <Alert message="Chưa có lịch trống" type="warning" showIcon />
+            <Alert
+              message="Đã hết lịch khám"
+              description="Bác sĩ không có lịch trống trong ngày này. Vui lòng chọn ngày khác."
+              type="warning"
+              showIcon
+              className="rounded-xl! border-orange-200! bg-orange-50!"
+            />
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {slots.map((slot) => (
-                <div
-                  key={slot._id}
-                  onClick={() => handleSlotSelect(slot)}
-                  className={`cursor-pointer border rounded-lg py-3 px-2 text-center transition-all duration-200 ${
-                    currentSelected?.slotId === slot._id
-                      ? "border-blue-600 bg-blue-50 text-blue-700 shadow-sm font-semibold"
-                      : "border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600"
-                  }`}
-                >
-                  {slot.startTime} - {slot.endTime}
-                </div>
-              ))}
+              {slots.map((slot) => {
+                const isSelected = currentSelected?.slotId === slot._id;
+                return (
+                  <div
+                    key={slot._id}
+                    onClick={() => handleSlotSelect(slot)}
+                    className={`
+                      cursor-pointer rounded-xl py-3 px-2 text-center transition-all duration-200 border-2 select-none
+                      ${
+                        isSelected
+                          ? "border-blue-600 bg-blue-50 text-blue-700 font-bold shadow-sm"
+                          : "border-gray-100 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-slate-50"
+                      }
+                    `}
+                  >
+                    {slot.startTime} - {slot.endTime}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

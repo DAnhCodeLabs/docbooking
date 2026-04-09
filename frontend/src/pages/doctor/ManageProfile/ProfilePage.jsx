@@ -11,6 +11,7 @@ import DocumentsTab from "./DocumentsTab";
 import InfoTab from "./InfoTab";
 import QualificationsTab from "./QualificationsTab";
 import { doctorApi } from "./doctorApi"; // THÊM IMPORT
+import Loading from "@/components/Loading";
 
 const { Title, Text } = Typography;
 
@@ -41,7 +42,7 @@ const ProfilePage = () => {
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <Spin size="large" />
+        <Loading />
       </div>
     );
   }

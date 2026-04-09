@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import CancelLeaveModal from "./CancelLeaveModal";
 import CreateLeaveDrawer from "./CreateLeaveDrawer";
 import { leaveApi } from "./leaveApi";
+import { isPastDay } from "@/utils/date";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -152,7 +153,7 @@ const LeavePage = () => {
       align: "center",
       render: (_, record) => {
         // Chỉ cho phép hủy nếu trạng thái đang active và ngày nghỉ chưa diễn ra ở quá khứ
-        const isPast = dayjs(record.date).isBefore(dayjs().startOf("day"));
+        const isPast = isPastDay(record.date);
         const canCancel = record.status === "active" && !isPast;
 
         return (

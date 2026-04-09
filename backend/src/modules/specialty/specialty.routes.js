@@ -3,7 +3,7 @@ import validate from "../../middlewares/validate.js";
 import { protect, restrictTo } from "../../middlewares/auth.js";
 import * as specialtyValidation from "./specialty.validation.js";
 import * as specialtyController from "./specialty.controller.js";
-import { parseSingleFile } from "../../middlewares/upload.js";
+import { singleFile } from "../../middlewares/upload.js";
 
 const router = express.Router();
 
@@ -24,17 +24,18 @@ router.use(restrictTo("admin"));
 // Chú ý thứ tự: Upload Ảnh -> Validate Chữ -> Gọi Controller
 router.post(
   "/",
-  parseSingleFile("image", { limits: { fileSize: 2 * 1024 * 1024 } }), // giới hạn 2MB
+  singleFile("image", { limits: { fileSize: 2 * 1024 * 1024 } }),
   validate(specialtyValidation.createSpecialtySchema),
   specialtyController.createSpecialty,
 );
 
 router.patch(
   "/:id",
-  parseSingleFile("image", { limits: { fileSize: 2 * 1024 * 1024 } }),
+  singleFile("image", { limits: { fileSize: 2 * 1024 * 1024 } }),
   validate(specialtyValidation.updateSpecialtySchema),
   specialtyController.updateSpecialty,
 );
+
 
 // Vô hiệu hóa / Kích hoạt lại (Xóa mềm)
 router.patch(

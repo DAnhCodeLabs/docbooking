@@ -1,4 +1,8 @@
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
 import { z } from "zod";
+
+dayjs.extend(utc);
 
 // Schema cho query params (danh sách)
 export const getUsersQuerySchema = z.object({
@@ -42,7 +46,7 @@ export const banUserSchema = z.object({
       .datetime({
         message: "Định dạng thời gian không hợp lệ (chuẩn ISO 8601)",
       })
-      .refine((date) => new Date(date) > new Date(), {
+      .refine((date) => dayjs(date).utc().isAfter(dayjs().utc()), {
         message: "Thời gian mở khóa phải nằm trong tương lai",
       }),
   }),

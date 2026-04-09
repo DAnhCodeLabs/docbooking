@@ -52,6 +52,9 @@ const auditLogSchema = new mongoose.Schema(
         "RESEND_CLINIC_CREDENTIALS",
         "CONFIRM_DOCTOR_BY_CLINIC",
         "REJECT_DOCTOR_BY_CLINIC",
+        "COMPLETE_APPOINTMENT",
+        "CANCEL_APPOINTMENT",
+        "REFUND_PROCESSED",
       ],
     },
     status: {
@@ -61,7 +64,7 @@ const auditLogSchema = new mongoose.Schema(
     },
     ipAddress: String,
     userAgent: String,
-    details: mongoose.Schema.Types.Mixed, // Thông tin thêm (ví dụ: lỗi, email)
+    details: mongoose.Schema.Types.Mixed,
   },
   {
     timestamps: true,

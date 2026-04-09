@@ -44,7 +44,7 @@ const Breadcrumb = () => {
     } else if (user?.role === "doctor") {
       homeLink = "/doctor/dashboard";
     } else if (user?.role === "clinic_admin") {
-      homeLink = "/clinic_admin/dashboard";
+      homeLink = "/clinic_admin/clinic-dashboard";
     } else {
       homeLink = "/home";
     }

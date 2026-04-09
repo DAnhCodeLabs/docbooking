@@ -203,10 +203,10 @@ const Header = () => {
 
   const userDropdownItems = [
     {
-      key: "profile",
-      label: "Hồ sơ cá nhân",
+      key: "appointments",
+      label: "Lịch sử khám",
       icon: <UserOutlined />,
-      onClick: () => navigate("/profile"),
+      onClick: () => navigate("/appointments"),
     },
     { type: "divider" },
     {
@@ -315,9 +315,18 @@ const Header = () => {
 
               <div className="hidden lg:block w-64 xl:w-80">
                 <Input
-                  placeholder="Tìm kiếm tỉnh thành..."
+                  placeholder="Tìm bác sĩ, phòng khám..."
                   prefix={<IoSearch className="text-gray-400 text-lg mr-1" />}
                   className="rounded-full! py-2! bg-gray-50! border-gray-200! hover:border-blue-400! focus:border-blue-500! transition-colors!"
+                  onPressEnter={(e) => {
+                    const keyword = e.target.value.trim();
+                    if (keyword) {
+                      navigate(
+                        `/doctors?search=${encodeURIComponent(keyword)}`,
+                      );
+                      e.target.value = ""; // optional: clear after search
+                    }
+                  }}
                 />
               </div>
             </div>

@@ -1,10 +1,5 @@
 import QRCode from "qrcode";
 
-/**
- * Tạo QR code dưới dạng dataURL (base64)
- * @param {string} data - Dữ liệu cần mã hóa
- * @returns {Promise<string>} - URL dạng data:image/png;base64,...
- */
 export const generateQRCode = async (data) => {
   try {
     const qrDataURL = await QRCode.toDataURL(data, {

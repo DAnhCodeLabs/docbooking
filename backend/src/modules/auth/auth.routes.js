@@ -19,7 +19,7 @@ const registerLimiter = rateLimit({
 // Rate limit cho gửi lại OTP (3 lần/giờ)
 const resendOtpLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 3,
+  max: 5,
   message: "Bạn đã yêu cầu gửi OTP quá nhiều lần. Vui lòng thử lại sau 1 giờ.",
 });
 

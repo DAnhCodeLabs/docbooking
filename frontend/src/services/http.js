@@ -6,12 +6,9 @@ const handleResponse = (response, showToast = true) => {
     if (response.success && showToast && response.message) {
       showSuccess(response.message);
     } else if (!response.success) {
-      // Lỗi từ backend (đã được show trong interceptor, nhưng nếu muốn xử lý thêm)
-      // Thực tế interceptor đã show rồi, nhưng nếu không có mạng thì sao? Ở đây ta chỉ show nếu chưa được show.
-      // Để tránh trùng, ta có thể kiểm tra nhưng tạm thời không show nữa vì interceptor đã show.
     }
   }
-  return response?.data ?? response; // Trả về data thực (nếu có)
+  return response?.data ?? response;
 };
 
 export const httpGet = async (url, params = {}, showToast = false) => {

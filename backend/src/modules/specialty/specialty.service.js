@@ -27,8 +27,9 @@ export const getSpecialties = async (query) => {
 // 2. THÊM MỚI CHUYÊN KHOA
 export const createSpecialty = async (data, adminId, ipAddress, userAgent) => {
   const existing = await Specialty.findOne({
-    name: { $regex: new RegExp(`^${data.name}$`, "i") },
-  });
+    name: data.name,
+  }).collation({ locale: "vi", strength: 2 });
+
   if (existing) {
     throw new ApiError(
       StatusCodes.CONFLICT,
@@ -41,23 +42,33 @@ export const createSpecialty = async (data, adminId, ipAddress, userAgent) => {
     imageUrl = await uploadToCloudinary(data.file, "specialties");
   }
 
-  const newSpecialty = await Specialty.create({
-    name: data.name,
-    description: data.description,
-    image: imageUrl,
-  });
+  try {
+    const newSpecialty = await Specialty.create({
+      name: data.name,
+      description: data.description,
+      image: imageUrl,
+    });
 
-  await AuditLog.create({
-    action: "CREATE_SPECIALTY",
-    status: "SUCCESS",
-    userId: adminId,
-    ipAddress,
-    userAgent,
-    details: { specialtyId: newSpecialty._id, name: newSpecialty.name },
-  });
+    await AuditLog.create({
+      action: "CREATE_SPECIALTY",
+      status: "SUCCESS",
+      userId: adminId,
+      ipAddress,
+      userAgent,
+      details: { specialtyId: newSpecialty._id, name: newSpecialty.name },
+    });
 
-  logger.info(`Admin ${adminId} đã tạo chuyên khoa mới: ${newSpecialty.name}`);
-  return { message: "Thêm chuyên khoa thành công.", specialty: newSpecialty };
+    logger.info(
+      `Admin ${adminId} đã tạo chuyên khoa mới: ${newSpecialty.name}`,
+    );
+    return { message: "Thêm chuyên khoa thành công.", specialty: newSpecialty };
+  } catch (error) {
+    // Rollback: xóa ảnh nếu đã upload
+    if (imageUrl) {
+      await deleteFromCloudinary(imageUrl).catch(() => {});
+    }
+    throw error; // để errorHandler xử lý
+  }
 };
 
 export const updateSpecialty = async (
@@ -72,32 +83,59 @@ export const updateSpecialty = async (
     throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy chuyên khoa.");
   }
 
-  if (data.name && data.name !== specialty.name) {
+  if (data.name) {
     const existing = await Specialty.findOne({
-      name: { $regex: new RegExp(`^${data.name}$`, "i") },
-    });
+      name: data.name,
+      _id: { $ne: id },
+    }).collation({ locale: "vi", strength: 2 });
+
     if (existing) {
       throw new ApiError(
         StatusCodes.CONFLICT,
-        `Tên chuyên khoa "${data.name}" đã được sử dụng.`,
+        `Chuyên khoa "${data.name}" đã tồn tại.`,
       );
     }
     specialty.name = data.name;
   }
 
-  // Xử lý ảnh mới
+  // Xử lý ảnh: upload ảnh mới trước, nếu thành công mới xóa ảnh cũ và cập nhật DB
+  let newImageUrl = null;
+  let oldImageUrl = specialty.image;
+
   if (data.file) {
-    // Xóa ảnh cũ nếu có
-    if (specialty.image) {
-      await deleteFromCloudinary(specialty.image).catch(() => {});
+    try {
+      newImageUrl = await uploadToCloudinary(data.file, "specialties");
+    } catch (uploadError) {
+      logger.error(`Upload ảnh thất bại: ${uploadError.message}`);
+      throw new ApiError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Không thể tải ảnh lên, vui lòng thử lại.",
+      );
     }
-    // Upload ảnh mới
-    specialty.image = await uploadToCloudinary(data.file, "specialties");
   }
 
+  // Cập nhật các trường (trừ image tạm thời)
   if (data.description !== undefined) specialty.description = data.description;
 
-  await specialty.save();
+  // Nếu có ảnh mới, thay thế
+  if (newImageUrl) {
+    specialty.image = newImageUrl;
+  }
+
+  try {
+    await specialty.save();
+  } catch (dbError) {
+    // Rollback: nếu có ảnh mới, xóa nó
+    if (newImageUrl) {
+      await deleteFromCloudinary(newImageUrl).catch(() => {});
+    }
+    throw dbError;
+  }
+
+  // Sau khi DB lưu thành công, mới xóa ảnh cũ
+  if (oldImageUrl && newImageUrl) {
+    await deleteFromCloudinary(oldImageUrl).catch(() => {});
+  }
 
   await AuditLog.create({
     action: "UPDATE_SPECIALTY",
@@ -133,6 +171,21 @@ export const toggleSpecialtyStatus = async (
       `Chuyên khoa này đang ở trạng thái ${newStatus} rồi.`,
     );
   }
+
+   // Nếu là deactivate, kiểm tra xem có bác sĩ active nào đang dùng chuyên khoa này không
+ if (action === "deactivate") {
+   const DoctorProfile = (await import("../../models/DoctorProfile.js")).default;
+   const activeDoctors = await DoctorProfile.countDocuments({
+     specialty: id,
+     status: "active",
+   });
+   if (activeDoctors > 0) {
+     throw new ApiError(
+       StatusCodes.CONFLICT,
+       `Không thể vô hiệu hóa chuyên khoa vì còn ${activeDoctors} bác sĩ đang hoạt động thuộc chuyên khoa này. Vui lòng chuyển bác sĩ sang chuyên khoa khác hoặc vô hiệu hóa họ trước.`,
+     );
+   }
+ }
 
   // Thực hiện Xóa mềm (Đổi trạng thái)
   specialty.status = newStatus;

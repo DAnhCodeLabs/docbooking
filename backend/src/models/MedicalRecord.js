@@ -41,11 +41,24 @@ const medicalRecordSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
+    cccdIssueDate: {
+      type: Date,
+      default: null,
+    },
+    cccdIssuePlace: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     address: {
       type: String,
       default: "",
     },
     insurance: insuranceSchema,
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
     bloodGroup: {
       type: String,
       enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],

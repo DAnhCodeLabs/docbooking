@@ -9,7 +9,7 @@ const AuthGuard = ({ children }) => {
     if (user?.role === "patient") {
       return <Navigate to="/home" replace />;
     } else if (user?.role === "clinic_admin") {
-      return <Navigate to="/clinic_admin/dashboard" replace />;
+      return <Navigate to="/clinic_admin/clinic-dashboard" replace />;
     } else {
       // admin hoặc doctor
       return (

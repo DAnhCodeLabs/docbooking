@@ -1,20 +1,11 @@
-import {
-  Drawer,
-  Avatar,
-  Tag,
-  Divider,
-  Image,
-  Typography,
-  Button,
-  Space,
-  Spin,
-} from "antd";
+import Loading from "@/components/Loading";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
-  UserOutlined,
   FilePdfOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
+import { Avatar, Button, Divider, Drawer, Image, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
@@ -71,7 +62,7 @@ const ClinicDoctorDetailDrawer = ({
     >
       {loading ? (
         <div className="flex justify-center items-center h-64">
-          <Spin size="large" />
+          <Loading />
         </div>
       ) : doctor ? (
         <>

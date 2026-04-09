@@ -1,5 +1,9 @@
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
 import { z } from "zod";
+import { parseDateToUTC } from "../../utils/date.js";
 
+dayjs.extend(utc);
 export const registerDoctorSchema = z.object({
   body: z
     .object({
@@ -169,4 +173,72 @@ export const rejectDoctorByClinicSchema = z.object({
   body: z.object({
     reason: z.string().optional(),
   }),
+});
+
+export const getMyPatientsSchema = z.object({
+  query: z.object({
+    page: z
+      .string()
+      .optional()
+      .transform((val) => (val ? parseInt(val, 10) : 1))
+      .refine((val) => val > 0, { message: "Page phải lớn hơn 0" }),
+    limit: z
+      .string()
+      .optional()
+      .transform((val) => (val ? parseInt(val, 10) : 10))
+      .refine((val) => val > 0, { message: "Limit phải lớn hơn 0" }),
+    search: z.string().optional(),
+    dateFrom: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Sai định dạng YYYY-MM-DD")
+      .optional(),
+    dateTo: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Sai định dạng YYYY-MM-DD")
+      .optional(),
+  }),
+});
+
+export const getPatientAppointmentsSchema = z.object({
+  params: z.object({
+    patientId: z
+      .string()
+      .regex(/^[0-9a-fA-F]{24}$/, "ID bệnh nhân không hợp lệ"),
+  }),
+});
+
+// ==================== DASHBOARD BÁC SĨ ====================
+
+export const getDoctorDashboardSchema = z.object({
+  query: z
+    .object({
+      startDate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Định dạng ngày phải YYYY-MM-DD")
+        .optional()
+        .transform((str) => {
+          if (!str) return undefined;
+          return parseDateToUTC(str);
+        }),
+      endDate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Định dạng ngày phải YYYY-MM-DD")
+        .optional()
+        .transform((str) => {
+          if (!str) return undefined;
+          return dayjs.utc(str).endOf("day").toDate();
+        }),
+    })
+    .refine(
+      (data) => {
+        if (data.startDate && data.endDate) {
+          return data.startDate <= data.endDate;
+        }
+        return true;
+      },
+      {
+        message: "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc",
+        path: ["startDate"],
+      },
+    ),
 });

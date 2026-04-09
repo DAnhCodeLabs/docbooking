@@ -1,7 +1,11 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { protect, restrictTo } from "../../middlewares/auth.js";
-import { parseFields, parseSingleFile } from "../../middlewares/upload.js";
+import {
+  checkFileExists,
+  fields,
+  singleFile,
+} from "../../middlewares/upload.js";
 import validate from "../../middlewares/validate.js";
 import * as doctorController from "./doctor.controller.js";
 import * as doctorValidation from "./doctor.validation.js";
@@ -68,7 +72,7 @@ router.post(
   "/documents",
   protect,
   restrictTo("doctor"),
-  parseSingleFile("document", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  singleFile("document", { limits: { fileSize: 10 * 1024 * 1024 } }),
   doctorController.uploadDocument,
 );
 
@@ -84,7 +88,7 @@ router.post(
   "/activity-images",
   protect,
   restrictTo("doctor"),
-  parseSingleFile("image", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  singleFile("image", { limits: { fileSize: 10 * 1024 * 1024 } }),
   doctorController.uploadActivityImage,
 );
 
@@ -110,16 +114,48 @@ const onboardingLimiter = rateLimit({
 router.post(
   "/register",
   onboardingLimiter,
-  parseFields(
+  fields(
     [
       { name: "avatarUrl", maxCount: 1 },
       { name: "uploadedDocuments", maxCount: 10 },
     ],
     { limits: { fileSize: 10 * 1024 * 1024 } },
   ),
+  checkFileExists({
+    fields: [
+      { name: "avatarUrl", maxCount: 1 },
+      { name: "uploadedDocuments", maxCount: 10 },
+    ],
+  }),
   validate(doctorValidation.registerDoctorSchema),
   doctorController.registerDoctor,
 );
+
+// ==================== QUẢN LÝ BỆNH NHÂN CỦA BÁC SĨ (phải đặt TRƯỚC route động /:id) ====================
+router.get(
+  "/my-patients",
+  protect,
+  restrictTo("doctor"),
+  validate(doctorValidation.getMyPatientsSchema),
+  doctorController.getMyPatients,
+);
+
+router.get(
+  "/my-patients/:patientId/appointments",
+  protect,
+  restrictTo("doctor"),
+  validate(doctorValidation.getPatientAppointmentsSchema),
+  doctorController.getPatientAppointments,
+);
+
+router.get(
+  "/dashboard",
+  protect,
+  restrictTo("doctor"),
+  validate(doctorValidation.getDoctorDashboardSchema),
+  doctorController.getDoctorDashboard,
+);
+
 
 // ==================== PUBLIC ROUTE ĐỘNG (ĐẶT CUỐI CÙNG) ====================
 router.get(

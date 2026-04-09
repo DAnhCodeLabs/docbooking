@@ -64,6 +64,11 @@ const hasOverlap = (slotsArray) => {
  * Xử lý một ngày cụ thể: tạo schedule và slot
  * Trả về object: { success: boolean, message?: string, totalSlots?: number }
  */
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+import { getTodayUTC, parseDateToUTC } from "../../utils/date.js";
+dayjs.extend(utc);
+
 const processSingleDay = async (
   doctorId,
   dateStr,
@@ -71,10 +76,9 @@ const processSingleDay = async (
   slotDuration,
   actorId,
 ) => {
-  const targetDate = new Date(dateStr);
-  targetDate.setUTCHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  // Sửa: Dùng dayjs để parse ngày chuẩn xác
+  const targetDate = parseDateToUTC(dateStr);
+  const today = getTodayUTC();
 
   if (targetDate < today) {
     return {
@@ -116,11 +120,15 @@ const processSingleDay = async (
   }
 
   // Tìm schedule hiện có
-  let schedule = await Schedule.findOne({ doctor: doctorId, date: targetDate });
+  let schedule = await Schedule.findOneAndUpdate(
+    { doctor: doctorId, date: targetDate },
+    { $setOnInsert: { totalSlots: 0 } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
 
-  if (schedule) {
-    // Ngày đã có lịch -> kiểm tra overlap với slot cũ
-    const existingSlots = await Slot.find({ scheduleId: schedule._id });
+  const existingSlots = await Slot.find({ scheduleId: schedule._id });
+
+  if (existingSlots.length > 0) {
     const combinedSlots = [...existingSlots, ...allGeneratedSlots];
     if (hasOverlap(combinedSlots)) {
       return {
@@ -129,40 +137,31 @@ const processSingleDay = async (
           "Khung giờ mới bị trùng lặp với các ca khám đã tạo trước đó trong ngày này.",
       };
     }
+  }
 
-    // Thêm slot mới
-    const slotsToInsert = allGeneratedSlots.map((slot) => ({
-      ...slot,
-      scheduleId: schedule._id,
-      status: "available",
-    }));
+  // 3. Chuẩn bị Slot mới để Insert
+  const slotsToInsert = allGeneratedSlots.map((slot) => ({
+    ...slot,
+    scheduleId: schedule._id,
+    status: "available",
+  }));
+
+  try {
+    // Insert hàng loạt Slot
     await Slot.insertMany(slotsToInsert);
-    schedule.totalSlots += allGeneratedSlots.length;
-    await schedule.save();
-  } else {
-    // Tạo mới schedule
-    schedule = await Schedule.create({
-      doctor: doctorId,
-      date: targetDate,
-      totalSlots: allGeneratedSlots.length,
-    });
 
-    const slotsToInsert = allGeneratedSlots.map((slot) => ({
-      ...slot,
-      scheduleId: schedule._id,
-      status: "available",
-    }));
-
-    try {
-      await Slot.insertMany(slotsToInsert);
-    } catch (err) {
-      // Rollback: xóa schedule vừa tạo
+    await Schedule.updateOne(
+      { _id: schedule._id },
+      { $inc: { totalSlots: allGeneratedSlots.length } },
+    );
+  } catch (err) {
+    if (existingSlots.length === 0) {
       await Schedule.deleteOne({ _id: schedule._id });
-      return {
-        success: false,
-        message: "Lỗi lưu dữ liệu, vui lòng thử lại.",
-      };
     }
+    return {
+      success: false,
+      message: "Lỗi lưu dữ liệu, vui lòng thử lại.",
+    };
   }
 
   return {
@@ -176,20 +175,18 @@ const processSingleDay = async (
 export const createSchedule = async (data, actorId, ipAddress, userAgent) => {
   const { doctorId, date, dateRange, shifts, slotDuration } = data;
 
-  // Xác định danh sách ngày cần xử lý
   let datesToProcess = [];
   if (date) {
     datesToProcess = [date];
   } else if (dateRange) {
-    const start = new Date(dateRange.start);
-    const end = new Date(dateRange.end);
-    const current = new Date(start);
-    while (current <= end) {
-      const yyyy = current.getFullYear();
-      const mm = String(current.getMonth() + 1).padStart(2, "0");
-      const dd = String(current.getDate()).padStart(2, "0");
-      datesToProcess.push(`${yyyy}-${mm}-${dd}`);
-      current.setDate(current.getDate() + 1);
+    // Sửa: Dùng dayjs để iterate qua các ngày
+    const start = dayjs.utc(dateRange.start).startOf("day");
+    const end = dayjs.utc(dateRange.end).startOf("day");
+    let current = start;
+
+    while (current.isBefore(end, "day") || current.isSame(end, "day")) {
+      datesToProcess.push(current.format("YYYY-MM-DD"));
+      current = current.add(1, "day");
     }
   }
 
@@ -324,18 +321,25 @@ export const toggleSlotStatus = async (
 export const getSchedules = async (query, user) => {
   let baseFilter = {};
 
-  // a. Phân quyền truy cập dữ liệu (Data Isolation)
   if (user.role === "doctor") {
-    baseFilter.doctor = user._id; // Bác sĩ KHÔNG THỂ xem lịch người khác
+    baseFilter.doctor = user._id;
   } else if (user.role === "admin" && query.doctorId) {
-    baseFilter.doctor = query.doctorId; // Admin lọc theo bác sĩ
+    baseFilter.doctor = query.doctorId;
+  } else if (user.role === "patient") {
+    if (!query.doctorId) {
+      return { schedules: [], total: 0 };
+    }
+    baseFilter.doctor = query.doctorId;
   }
-
   // b. Lọc theo khoảng thời gian (Phục vụ render Calendar Frontend)
   if (query.startDate || query.endDate) {
     baseFilter.date = {};
-    if (query.startDate) baseFilter.date.$gte = new Date(query.startDate);
-    if (query.endDate) baseFilter.date.$lte = new Date(query.endDate);
+    if (query.startDate) {
+      baseFilter.date.$gte = parseDateToUTC(query.startDate);
+    }
+    if (query.endDate) {
+      baseFilter.date.$lte = dayjs.utc(query.endDate).endOf("day").toDate();
+    }
   }
 
   // c. Tận dụng ApiFeatures để phân trang và sắp xếp
@@ -344,9 +348,16 @@ export const getSchedules = async (query, user) => {
     .paginate();
 
   // d. Lấy dữ liệu và Populate thông tin bác sĩ
+  // Xác định các trường cần lấy của doctor dựa trên role
+  let doctorSelectFields = "fullName avatar"; // mặc định cho patient
+  if (user.role !== "patient") {
+    // admin hoặc doctor có thể xem email, phone
+    doctorSelectFields = "fullName email phone avatar";
+  }
+
   let schedules = await features.query.populate({
     path: "doctor",
-    select: "fullName email phone avatar",
+    select: doctorSelectFields,
   });
 
   // Nếu yêu cầu include slots

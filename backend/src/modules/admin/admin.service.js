@@ -1,4 +1,6 @@
 import { StatusCodes } from "http-status-codes";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
 import AuditLog from "../../models/AuditLog.js";
 import User from "../../models/User.js";
 import ApiError from "../../utils/ApiError.js";
@@ -6,6 +8,11 @@ import ApiFeatures from "../../utils/ApiFeatures.js";
 import logger from "../../utils/logger.js";
 import PatientProfile from "../../models/PatientProfile.js";
 import Schedule from "../../models/Schedule.js";
+import Appointment from "../../models/Appointment.js";
+import { getTodayUTC } from "../../utils/date.js";
+import * as reviewService from "../review/review.service.js";
+
+dayjs.extend(utc);
 // ==========================================
 // 1. LẤY DANH SÁCH (LOẠI TRỪ ADMIN)
 // ==========================================
@@ -163,18 +170,42 @@ export const softDeleteUser = async (userId, adminId, ipAddress, userAgent) => {
     );
   }
 
-  if (user.role === "doctor") {
-    const futureSchedules = await Schedule.countDocuments({
-      doctor: userId,
-      date: { $gte: new Date() },
-    });
-    if (futureSchedules > 0) {
-      throw new ApiError(
-        StatusCodes.CONFLICT,
-        "Không thể vô hiệu hóa bác sĩ vì vẫn còn lịch làm việc trong tương lai. Vui lòng xóa hoặc hủy các lịch này trước.",
-      );
+    if (user.role === "doctor") {
+      const today = getTodayUTC();
+
+      // Kiểm tra schedule tương lai (lịch làm việc)
+      const futureSchedules = await Schedule.countDocuments({
+        doctor: userId,
+        date: { $gte: today },
+      });
+      if (futureSchedules > 0) {
+        throw new ApiError(
+          StatusCodes.CONFLICT,
+          "Không thể vô hiệu hóa bác sĩ vì vẫn còn lịch làm việc trong tương lai. Vui lòng xóa hoặc hủy các lịch này trước.",
+        );
+      }
+
+      // Kiểm tra appointment tương lai đã được đặt (confirmed/checked_in)
+      const appointments = await Appointment.find({
+        doctor: userId,
+        status: { $in: ["confirmed", "checked_in"] },
+      }).populate({
+        path: "slot",
+        populate: { path: "scheduleId", select: "date" },
+      });
+
+      const futureAppointments = appointments.filter((apt) => {
+        const slotDate = apt.slot?.scheduleId?.date;
+        return slotDate && new Date(slotDate) >= today;
+      });
+
+      if (futureAppointments.length > 0) {
+        throw new ApiError(
+          StatusCodes.CONFLICT,
+          `Không thể vô hiệu hóa bác sĩ vì còn ${futureAppointments.length} cuộc hẹn chưa diễn ra. Vui lòng hủy các cuộc hẹn này trước.`,
+        );
+      }
     }
-  }
 
   user.status = "inactive";
   user.deactivatedAt = new Date();

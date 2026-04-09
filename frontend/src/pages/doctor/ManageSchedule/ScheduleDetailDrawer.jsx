@@ -10,6 +10,7 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { scheduleApi } from "./scheduleApi";
+import Loading from "@/components/Loading";
 
 const { Text } = Typography;
 
@@ -137,7 +138,7 @@ const ScheduleDetailDrawer = ({ visible, onClose, schedule }) => {
 
           {loading ? (
             <div className="flex justify-center py-10">
-              <Spin size="large" className="text-blue-600!" />
+              <Loading/>
             </div>
           ) : slots.length === 0 ? (
             <div className="text-center py-10 text-slate-500">

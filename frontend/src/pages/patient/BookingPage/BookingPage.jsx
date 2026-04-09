@@ -18,7 +18,7 @@ import Step2PatientInfo from "./components/Step2PatientInfo";
 import Step3Confirm from "./components/Step3Confirm";
 import Step4Payment from "./components/Step4Payment";
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const BookingPage = () => {
   const { doctorId } = useParams();
@@ -34,7 +34,13 @@ const BookingPage = () => {
     isForSelf: true,
     note: "",
     symptoms: "",
+    paymentMethod: "offline",
   });
+
+  const handleStep2Complete = (data) => {
+    setBookingData((prev) => ({ ...prev, ...data }));
+    setCurrentStep(2);
+  };
 
   useEffect(() => {
     const fetchDoctor = async () => {
@@ -60,16 +66,23 @@ const BookingPage = () => {
 
     setSubmitting(true);
     try {
-      await bookingApi.createAppointment({
+      const payload = {
         slotId: bookingData.selectedSlot.slotId,
         medicalRecordId: bookingData.patientRecord._id,
         note: bookingData.note,
         symptoms: bookingData.symptoms,
-      });
-      message.success(
-        "Đặt lịch thành công! Vui lòng kiểm tra email để nhận mã QR.",
-      );
-      navigate("/appointments"); // chuyển sang trang lịch sử đặt lịch
+        paymentMethod: bookingData.paymentMethod,
+      };
+
+      const response = await bookingApi.createAppointment(payload);
+      if (response?.paymentUrl) {
+        window.location.href = response.paymentUrl;
+      } else {
+        message.success(
+          "Đặt lịch thành công! Vui lòng kiểm tra email để nhận mã QR.",
+        );
+        navigate("/appointments");
+      }
     } catch (error) {
       message.error(error?.message || "Đặt lịch thất bại. Vui lòng thử lại.");
     } finally {
@@ -86,23 +99,9 @@ const BookingPage = () => {
       message.warning("Vui lòng chọn hoặc tạo hồ sơ bệnh nhân.");
       return;
     }
-    // Nếu là bước cuối (thanh toán), thực hiện tạo appointment
     if (currentStep === 3) {
-      try {
-        await bookingApi.createAppointment({
-          slotId: bookingData.selectedSlot.slotId,
-          medicalRecordId: bookingData.patientRecord._id,
-          note: bookingData.note,
-          symptoms: bookingData.symptoms,
-        });
-        message.success(
-          "Đặt lịch thành công! Vui lòng kiểm tra email để nhận QR code.",
-        );
-        navigate("/appointments"); // hoặc trang thành công
-      } catch (err) {
-        message.error("Đặt lịch thất bại. Vui lòng thử lại.");
-        return;
-      }
+      handleConfirmBooking();
+      return;
     }
     setCurrentStep(currentStep + 1);
   };
@@ -111,7 +110,7 @@ const BookingPage = () => {
 
   const steps = [
     {
-      title: "Ngày & Giờ",
+      title: "Thời gian",
       content: (
         <Step1DateTime
           doctor={doctor}
@@ -123,20 +122,15 @@ const BookingPage = () => {
       ),
     },
     {
-      title: "Hồ sơ bệnh nhân",
+      title: "Hồ sơ",
       content: (
         <Step2PatientInfo
-          onComplete={(data) =>
-            setBookingData((prev) => ({ ...prev, ...data }))
-          }
+          onComplete={handleStep2Complete}
           initialData={bookingData}
         />
       ),
     },
-    {
-      title: "Xác nhận",
-      content: <Step3Confirm bookingData={bookingData} />,
-    },
+    { title: "Xác nhận", content: <Step3Confirm bookingData={bookingData} /> },
     {
       title: "Thanh toán",
       content: (
@@ -144,56 +138,90 @@ const BookingPage = () => {
           bookingData={bookingData}
           onConfirm={handleConfirmBooking}
           submitting={submitting}
+          onPaymentMethodChange={(method) =>
+            setBookingData((prev) => ({ ...prev, paymentMethod: method }))
+          }
         />
       ),
     },
   ];
 
   return (
-    <div className="bg-gray-50 min-h-screen py-8">
-      <div className="container mx-auto px-4 lg:px-8 max-w-7xl">
-        <div className="mb-8">
+    <div className="bg-slate-50 min-h-screen py-6 md:py-10">
+      <div className="container mx-auto px-4 max-w-6xl">
+        <div className="mb-6 md:mb-8 text-center md:text-left">
           <Title level={2} className="m-0! text-gray-800! font-bold!">
             Đặt lịch khám chuyên gia
           </Title>
-          <p className="text-gray-500 mt-2 text-base">
-            Vui lòng hoàn thiện các bước dưới đây để xác nhận lịch hẹn của bạn.
-          </p>
+          <Text className="text-gray-500! mt-2! text-sm! md:text-base! block!">
+            Hoàn thiện 4 bước dưới đây để xác nhận lịch hẹn của bạn tại hệ
+            thống.
+          </Text>
         </div>
 
-        <Row gutter={[32, 32]}>
+        <Row gutter={[24, 24]} className="flex-col-reverse lg:flex-row!">
           {/* Cột trái: Form đặt lịch */}
           <Col xs={24} lg={16}>
-            <Card className="shadow-sm! border-transparent! rounded-2xl! overflow-hidden!">
-              <div className="p-2 md:p-6 border-b border-gray-100">
+            <Card className="shadow-sm! border-gray-100! rounded-2xl! overflow-hidden! p-0! [&>.ant-card-body]:p-0!">
+              {/* === BẮT ĐẦU VÙNG STEPPER ĐÃ SỬA === */}
+              <div className="p-4 pt-6 md:p-6 lg:px-8 border-b border-gray-100 bg-white">
                 <Steps
                   current={currentStep}
                   items={steps.map((s) => ({ title: s.title }))}
-                  className="mb-2!"
+                  size="small"
+                  responsive={false} // QUAN TRỌNG: Ngăn chặn tự động chuyển thành hàng dọc trên Mobile
+                  labelPlacement="vertical" // QUAN TRỌNG: Đẩy Text xuống dưới Icon cho gọn
+                  className="mb-0! max-w-2xl! mx-auto!
+                    [&_.ant-steps-item-title]:text-[11px]! sm:[&_.ant-steps-item-title]:text-sm!
+                    [&_.ant-steps-item-title]:mt-1! md:[&_.ant-steps-item-title]:mt-2!
+                    [&_.ant-steps-item-icon]:w-7! [&_.ant-steps-item-icon]:h-7! [&_.ant-steps-item-icon]:leading-6.5!
+                    [&_.ant-steps-item-tail]:top-3.25! [&_.ant-steps-item-tail]:mx-0!
+                  "
                 />
               </div>
+              {/* === KẾT THÚC VÙNG STEPPER ĐÃ SỬA === */}
 
-              <div className="p-4 md:p-8 min-h-100">
+              <div className="p-4 md:p-6 lg:p-8 min-h-100 bg-white">
                 {steps[currentStep].content}
               </div>
 
-              <div className="px-4 md:px-8 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center rounded-b-2xl">
-                {currentStep > 0 ? (
-                  <Button size="large" onClick={prev} className=" font-medium!">
+              {/* Bottom Action Bar */}
+              <div className="px-4 md:px-8 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+                {currentStep > 0 && (
+                  <Button
+                    size="large"
+                    onClick={prev}
+                    disabled={submitting}
+                    className="rounded-lg! font-medium!"
+                  >
                     Quay lại
                   </Button>
-                ) : (
-                  <div />
-                )}{" "}
-                {/* Placeholder để đẩy nút Next sang phải */}
-                {currentStep < steps.length - 1 && (
+                )}
+                {/* Khoảng trống để đẩy nút sang phải nếu không có nút quay lại */}
+                <div className="flex-1"></div>
+
+                {/* Chỉ hiển thị nút "Tiếp tục" nếu không phải bước cuối và không phải bước hồ sơ (index=1) */}
+                {currentStep < steps.length - 1 && currentStep !== 1 && (
                   <Button
                     type="primary"
                     size="large"
                     onClick={next}
-                    className=" font-medium! bg-blue-600! hover:bg-blue-700!"
+                    className="rounded-lg! font-medium! bg-blue-600! hover:bg-blue-700! border-none! px-6! md:px-8!"
                   >
                     Tiếp tục
+                  </Button>
+                )}
+
+                {/* Nút Xác nhận chỉ hiển thị ở bước cuối (thanh toán) */}
+                {currentStep === steps.length - 1 && (
+                  <Button
+                    type="primary"
+                    size="large"
+                    onClick={handleConfirmBooking}
+                    loading={submitting}
+                    className="rounded-lg! font-medium! bg-green-600! hover:bg-green-700! border-none! px-6! md:px-8!"
+                  >
+                    Xác nhận
                   </Button>
                 )}
               </div>
@@ -201,32 +229,32 @@ const BookingPage = () => {
 
             <Alert
               message={
-                <span className="font-semibold text-yellow-800">
-                  Lưu ý quan trọng
+                <span className="font-semibold text-orange-800">
+                  Lưu ý khi đến khám
                 </span>
               }
-              description="Vui lòng đến khám trước 10-15 phút để làm thủ tục và chuẩn bị hồ sơ. Mang theo CCCD và các giấy tờ y tế liên quan."
+              description="Vui lòng đến trước 15 phút để làm thủ tục. Nhớ mang theo CCCD và các kết quả xét nghiệm/đơn thuốc cũ (nếu có)."
               type="warning"
               showIcon
-              className="mt-6!  border-yellow-200! bg-yellow-50!"
+              className="mt-6! rounded-xl! border-orange-200! bg-orange-50! py-3!"
             />
           </Col>
 
-          {/* Cột phải: Thông tin bác sĩ sticky */}
+          {/* Cột phải: Thông tin bác sĩ */}
           <Col xs={24} lg={8}>
             <div className="sticky top-24">
               {loading ? (
-                <Card className="shadow-sm! border-gray-200! rounded-2xl! overflow-hidden!">
-                  <div className="flex justify-center items-center p-8">
+                <Card className="shadow-sm! border-gray-100! rounded-2xl! overflow-hidden!">
+                  <div className="flex justify-center items-center p-10">
                     <Loading />
                   </div>
                 </Card>
               ) : doctor ? (
                 <DoctorInfoCard doctor={doctor} />
               ) : (
-                <Card className="shadow-sm! border-gray-200! rounded-2xl! overflow-hidden!">
-                  <div className="text-center p-8 text-red-500">
-                    Không tìm thấy thông tin bác sĩ
+                <Card className="shadow-sm! border-gray-100! rounded-2xl! overflow-hidden!">
+                  <div className="text-center p-8 text-red-500 font-medium">
+                    Không tìm thấy bác sĩ
                   </div>
                 </Card>
               )}

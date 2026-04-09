@@ -74,19 +74,3 @@ export const softDeleteUser = asyncHandler(async (req, res) => {
   );
   sendSuccess(res, StatusCodes.OK, result.message);
 });
-
-// Xóa cứng tài khoản
-export const hardDeleteUser = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const adminId = req.user._id;
-  const ipAddress = req.ip || req.connection.remoteAddress;
-  const userAgent = req.get("User-Agent") || "";
-
-  const result = await adminService.hardDeleteUser(
-    id,
-    adminId,
-    ipAddress,
-    userAgent,
-  );
-  sendSuccess(res, StatusCodes.OK, result.message);
-});

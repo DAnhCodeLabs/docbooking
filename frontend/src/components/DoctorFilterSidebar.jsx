@@ -4,6 +4,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import { Button, Checkbox, Divider, Input, Select, Slider } from "antd";
+import { useEffect, useState } from "react";
 
 const { Option } = Select;
 
@@ -16,6 +17,13 @@ const DoctorFilterSidebar = ({
   clinics,
   isMobile = false, // Master Dev: Thêm prop này để phân biệt môi trường render
 }) => {
+  const [localSearch, setLocalSearch] = useState(filters.search);
+
+  // useEffect để đồng bộ localSearch khi filters.search thay đổi từ bên ngoài (ví dụ reset)
+  useEffect(() => {
+    setLocalSearch(filters.search);
+  }, [filters.search]);
+
   // Thay đổi style vỏ bọc dựa trên môi trường hiển thị
   const wrapperClass = isMobile
     ? "p-5" // Trong Drawer trên Mobile thì chỉ cần padding
@@ -42,10 +50,13 @@ const DoctorFilterSidebar = ({
           <Input
             placeholder="Nhập tên bác sĩ..."
             prefix={<SearchOutlined className="text-slate-400!" />}
-            value={filters.search}
-            onChange={(e) => onFilterChange("search", e.target.value)}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             className=" h-10! bg-slate-50! border-slate-200! hover:border-blue-400! focus:border-blue-500!"
-            onPressEnter={onSearch}
+            onPressEnter={() => {
+              onFilterChange("search", localSearch);
+              onSearch();
+            }}
             allowClear
           />
         </div>
@@ -158,7 +169,10 @@ const DoctorFilterSidebar = ({
           <Button
             type="primary"
             block
-            onClick={onSearch}
+            onClick={() => {
+              onFilterChange("search", localSearch);
+              onSearch();
+            }}
             className="bg-blue-600! hover:bg-blue-700! border-none!  h-11! font-semibold! shadow-sm! shadow-blue-600/20!"
           >
             Áp dụng bộ lọc

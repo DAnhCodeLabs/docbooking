@@ -1,5 +1,15 @@
 import mongoose from "mongoose";
 
+/**
+ * Appointment Model
+ * NOTE: Uses HARD DELETE for cancelled appointments (not soft delete)
+ * Reason: Previous soft-delete logic caused E11000 duplicate key errors on slot field
+ *         when users re-booked slots after cancellation.
+ *
+ * Audit trail is preserved in AuditLog collection for cancelled appointments.
+ * See: src/seeders/cleanupCancelledAppointments.js for cleanup of old cancelled records
+ */
+
 const appointmentSchema = new mongoose.Schema(
   {
     patientProfile: {
@@ -21,11 +31,16 @@ const appointmentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Slot",
       required: true,
-      unique: true, // một slot chỉ được đặt một lần
     },
     status: {
       type: String,
-      enum: ["confirmed", "checked_in", "completed", "cancelled"],
+      enum: [
+        "pending_payment",
+        "confirmed",
+        "checked_in",
+        "completed",
+        "cancelled",
+      ],
       default: "confirmed",
     },
     qrCode: {
@@ -50,6 +65,37 @@ const appointmentSchema = new mongoose.Schema(
     completedAt: {
       type: Date,
     },
+
+    paymentMethod: {
+      type: String,
+      enum: ["online", "offline"],
+      required: true,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed"],
+      default: "pending",
+    },
+    transactionId: {
+      type: String,
+      default: null,
+    },
+    paymentExpiryAt: {
+      type: Date,
+      default: null,
+    },
+    refundAmount: {
+      type: Number,
+      default: 0,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -60,6 +106,9 @@ const appointmentSchema = new mongoose.Schema(
 appointmentSchema.index({ bookingUser: 1 });
 appointmentSchema.index({ doctor: 1 });
 appointmentSchema.index({ status: 1 });
+appointmentSchema.index({ paymentStatus: 1 });
+appointmentSchema.index({ isDeleted: 1 });
+appointmentSchema.index({ paymentExpiryAt: 1 });
 
 const Appointment = mongoose.model("Appointment", appointmentSchema);
 export default Appointment;

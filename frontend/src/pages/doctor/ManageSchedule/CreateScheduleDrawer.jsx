@@ -1,3 +1,4 @@
+import { getTodayUTC } from "@/utils/date";
 import {
   CalendarOutlined,
   ClockCircleOutlined,
@@ -214,7 +215,7 @@ const CreateScheduleDrawer = ({ visible, onClose, onSuccess }) => {
                   className="w-full! h-11! bg-slate-50!  border-slate-200! hover:border-indigo-400! focus:border-indigo-500!"
                   placeholder="Chọn ngày"
                   disabledDate={(current) =>
-                    current && current < dayjs().startOf("day")
+                    current && dayjs(getTodayUTC()).isAfter(current, "day")
                   }
                 />
               )}
@@ -230,7 +231,7 @@ const CreateScheduleDrawer = ({ visible, onClose, onSuccess }) => {
                   className="w-full! h-11! bg-slate-50!  border-slate-200! hover:border-indigo-400! focus:border-indigo-500!"
                   placeholder={["Từ ngày", "Đến ngày"]}
                   disabledDate={(current) =>
-                    current && current < dayjs().startOf("day")
+                    current && dayjs(getTodayUTC()).isAfter(current, "day")
                   }
                 />
               )}

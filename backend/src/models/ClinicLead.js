@@ -41,6 +41,11 @@ const clinicLeadSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    consultationFee: {
+      type: Number,
+      required: true,
+      default: 50000,
+    },
     // Mở rộng status: thêm locked, deleted
     status: {
       type: String,

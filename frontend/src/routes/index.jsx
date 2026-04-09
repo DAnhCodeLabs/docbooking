@@ -1,14 +1,23 @@
 import Categories from "@/pages/admin/ManageCategories/Categories";
 import ClinicLeads from "@/pages/admin/ManageClinicLeads/ClinicLeads";
 import ClinicDoctorsPage from "@/pages/clinic/ManageClinicDoctors/ClinicDoctorsPage";
+import AppointmentsPage from "@/pages/dashboard/ManageAppointments/AppointmentsPage";
+import ClinicDashboardPage from "@/pages/dashboard/ManageDashboard/ClinicDashboardPage";
+import DashboardPage from "@/pages/dashboard/ManageDashboard/DashboardPage";
 import LeavePage from "@/pages/doctor/ManageLeave/LeavePage";
+import MyPatientsPage from "@/pages/doctor/ManageMyPatients/MyPatientsPage";
 import ProfilePage from "@/pages/doctor/ManageProfile/ProfilePage";
 import BookingPage from "@/pages/patient/BookingPage/BookingPage";
+import CheckinPage from "@/pages/patient/CheckinPage";
 import DoctorsPage from "@/pages/patient/DoctorsPage";
+import PatientAppointmentsPage from "@/pages/patient/PatientAppointmentsPage";
+import PaymentResultPage from "@/pages/patient/payment/PaymentResultPage";
+import ScanQRPage from "@/pages/patient/ScanQRPage";
 import { lazy } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AuthGuard from "./AuthGuard";
 import PrivateRoute from "./PrivateRoute";
+import DoctorDashboardPage from "@/pages/dashboard/ManageDashboard/DoctorDashboardPage";
 
 // Layouts
 const DashboardLayout = lazy(() => import("@/layouts/DashboardLayout"));
@@ -44,7 +53,7 @@ const HomePage = lazy(() => import("@/pages/patient/HomePage"));
 // Dashboard common pages
 const DashboardHome = lazy(() => import("@/pages/dashboard/DashboardHome"));
 const Profile = lazy(() => import("@/pages/dashboard/Profile"));
-
+const CheckinLayout = lazy(() => import("@/layouts/CheckinLayout"));
 // Other
 const NotFound = lazy(() => import("@/pages/NotFound"));
 export const router = createBrowserRouter([
@@ -103,6 +112,36 @@ export const router = createBrowserRouter([
           </PrivateRoute>
         ),
       },
+
+      {
+        path: "appointments",
+        element: (
+          <PrivateRoute allowedRoles={["patient"]}>
+            <PatientAppointmentsPage />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "payment-result",
+        element: (
+          <PrivateRoute allowedRoles={["patient"]}>
+            <PaymentResultPage />
+          </PrivateRoute>
+        ),
+      },
+    ],
+  },
+
+  {
+    path: "/",
+    element: (
+      <PrivateRoute allowedRoles={["clinic_admin"]}>
+        <CheckinLayout />
+      </PrivateRoute>
+    ),
+    children: [
+      { path: "scan", element: <ScanQRPage /> },
+      { path: "checkin/:id", element: <CheckinPage /> },
     ],
   },
 
@@ -131,7 +170,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/admin/dashboard" replace /> },
 
           // Các trang dùng chung nhưng mang namespace của admin
-          { path: "dashboard", element: <DashboardHome /> },
+          { path: "dashboard", element: <DashboardPage /> },
           { path: "profile", element: <Profile /> },
 
           // Các trang nghiệp vụ riêng của admin
@@ -147,6 +186,10 @@ export const router = createBrowserRouter([
           {
             path: "specialties",
             element: <Categories />,
+          },
+          {
+            path: "appointments",
+            element: <AppointmentsPage />,
           },
         ],
       },
@@ -166,7 +209,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/doctor/dashboard" replace /> },
 
           // Các trang dùng chung nhưng mang namespace của doctor
-          { path: "dashboard", element: <DashboardHome /> },
+          { path: "dashboard", element: <DoctorDashboardPage /> },
 
           // Các trang nghiệp vụ riêng của doctor
           { path: "schedule", element: <SchedulePage /> },
@@ -174,8 +217,15 @@ export const router = createBrowserRouter([
             path: "leave",
             element: <LeavePage />,
           },
-          { path: "patients", element: <MyPatients /> },
+          {
+            path: "patients",
+            element: <MyPatientsPage />,
+          },
           { path: "profile", element: <ProfilePage /> },
+          {
+            path: "appointments",
+            element: <AppointmentsPage />,
+          },
         ],
       },
 
@@ -189,13 +239,17 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Navigate to="/clinic_admin/dashboard" replace />,
+            element: <Navigate to="/clinic_admin/clinic-dashboard" replace />,
           },
-          { path: "dashboard", element: <DashboardHome /> },
+          { path: "clinic-dashboard", element: <ClinicDashboardPage /> },
           { path: "profile", element: <Profile /> },
           {
             path: "doctors",
             element: <ClinicDoctorsPage />,
+          },
+          {
+            path: "appointments",
+            element: <AppointmentsPage />,
           },
         ],
       },

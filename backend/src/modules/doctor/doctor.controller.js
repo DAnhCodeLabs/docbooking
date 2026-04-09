@@ -220,3 +220,51 @@ export const rejectDoctorByClinic = asyncHandler(async (req, res) => {
   );
   sendSuccess(res, StatusCodes.OK, result.message);
 });
+
+/**
+ * Lấy danh sách bệnh nhân đã khám (của bác sĩ hiện tại)
+ */
+export const getMyPatients = asyncHandler(async (req, res) => {
+  const doctorId = req.user._id;
+  const result = await doctorService.getMyPatients(doctorId, req.query);
+  sendSuccess(
+    res,
+    StatusCodes.OK,
+    "Lấy danh sách bệnh nhân thành công.",
+    result,
+  );
+});
+
+/**
+ * Lấy chi tiết các lần khám của một bệnh nhân (của bác sĩ hiện tại)
+ */
+export const getPatientAppointments = asyncHandler(async (req, res) => {
+  const doctorId = req.user._id;
+  const { patientId } = req.params;
+  const result = await doctorService.getPatientAppointments(
+    doctorId,
+    patientId,
+    req.query,
+  );
+  sendSuccess(
+    res,
+    StatusCodes.OK,
+    "Lấy chi tiết bệnh nhân thành công.",
+    result,
+  );
+});
+
+// ==================== DASHBOARD BÁC SĨ ====================
+
+export const getDoctorDashboard = asyncHandler(async (req, res) => {
+  const doctorId = req.user._id;
+  const { startDate, endDate } = req.query;
+
+  const stats = await doctorService.getDoctorDashboardStats(
+    doctorId,
+    startDate,
+    endDate,
+  );
+
+  sendSuccess(res, StatusCodes.OK, "Lấy dữ liệu thống kê thành công.", stats);
+});

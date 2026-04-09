@@ -97,7 +97,14 @@ export const processDoctorApplication = async (
     throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy hồ sơ bác sĩ.");
 
   // Sửa điều kiện: chỉ cho phép xử lý hồ sơ đang ở trạng thái "pending_admin_approval"
-  if (profile.status !== "pending_admin_approval") {
+  const isClinicDoctor = !!profile.clinicId;
+  if (isClinicDoctor && profile.status !== "pending_admin_approval") {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      `Hồ sơ này đang ở trạng thái ${profile.status}, không thể xử lý. Bác sĩ thuộc phòng khám cần được xác nhận bởi phòng khám trước.`,
+    );
+  }
+  if (!isClinicDoctor && profile.status !== "pending") {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       `Hồ sơ này đang ở trạng thái ${profile.status}, không thể xử lý.`,

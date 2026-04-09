@@ -3,27 +3,25 @@ import { showError } from "@/utils/toast";
 import axios from "axios";
 
 const axiosClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
+  baseURL: "/api", // ← Quan trọng: dùng tương đối → Vite proxy xử lý
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
   },
-  withCredentials: true, // Cho phép gửi cookie
+  withCredentials: true,
 });
 
-// Request interceptor: gắn access token
+// Request interceptor
 axiosClient.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().accessToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => Promise.reject(error),
 );
 
-// Response interceptor
+// Response interceptor (đã sửa refresh token dùng tương đối)
 axiosClient.interceptors.response.use(
   (response) => response.data,
   async (error) => {
@@ -33,11 +31,7 @@ axiosClient.interceptors.response.use(
       showError(
         "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.",
       );
-      return Promise.reject({
-        success: false,
-        message: "Network error",
-        data: null,
-      });
+      return Promise.reject({ success: false, message: "Network error" });
     }
 
     const { status, data } = error.response;
@@ -46,22 +40,19 @@ axiosClient.interceptors.response.use(
       "/auth/refresh-token",
     );
 
-    // Xử lý 401 - Unauthorized
     if (
       status === 401 &&
       !isLoginRequest &&
       !isRefreshRequest &&
       !originalRequest._retry
     ) {
-      // ✅ Thêm check
       originalRequest._retry = true;
       try {
         const response = await axios.post(
-          `${import.meta.env.VITE_API_URL}/auth/refresh-token`,
+          "/auth/refresh-token",
           {},
           { withCredentials: true },
         );
-
         const { accessToken } = response.data;
         useAuthStore.getState().updateAccessToken(accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
@@ -72,7 +63,6 @@ axiosClient.interceptors.response.use(
         return Promise.reject(refreshError);
       }
     }
-
     if (isLoginRequest && status === 401) {
       // 401 từ login = credential sai, KHÔNG phải session expired
       // KHÔNG logout vì user chưa đăng nhập

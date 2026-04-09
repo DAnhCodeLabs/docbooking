@@ -1,3 +1,5 @@
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
 import { StatusCodes } from "http-status-codes";
 import AuditLog from "../../models/AuditLog.js";
 import Leave from "../../models/Leave.js";
@@ -5,17 +7,16 @@ import Schedule from "../../models/Schedule.js";
 import Slot from "../../models/Slot.js";
 import ApiError from "../../utils/ApiError.js";
 import ApiFeatures from "../../utils/ApiFeatures.js";
+import { getTodayUTC, parseDateToUTC } from "../../utils/date.js";
+dayjs.extend(utc);
 
 // 1. ĐĂNG KÝ NGÀY NGHỈ
 export const createLeave = async (data, doctorId, ipAddress, userAgent) => {
   const { date, startTime, endTime, reason } = data;
 
-  // Chuẩn hóa ngày về 00:00:00 UTC
-  const targetDate = new Date(date);
-  targetDate.setUTCHours(0, 0, 0, 0);
-
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  // Chuẩn hóa ngày về 00:00:00 UTC (sửa: dùng dayjs().utc())
+  const targetDate = parseDateToUTC(date);
+  const today = getTodayUTC();
 
   if (targetDate < today) {
     throw new ApiError(
@@ -48,8 +49,8 @@ export const createLeave = async (data, doctorId, ipAddress, userAgent) => {
     // Lấy các Slot nằm trong khung giờ xin nghỉ
     const affectedSlots = await Slot.find({
       scheduleId: schedule._id,
-      startTime: { $gte: startTime },
-      endTime: { $lte: endTime },
+      startTime: { $lt: endTime },
+      endTime: { $gt: startTime }, 
     });
 
     // Kiểm tra xem có Slot nào đã có người đặt không
@@ -177,8 +178,10 @@ export const getLeaves = async (query, doctorId) => {
 
   if (apiQuery.startDate || apiQuery.endDate) {
     baseFilter.date = {};
-    if (apiQuery.startDate) baseFilter.date.$gte = new Date(apiQuery.startDate);
-    if (apiQuery.endDate) baseFilter.date.$lte = new Date(apiQuery.endDate);
+    if (apiQuery.startDate)
+      baseFilter.date.$gte = parseDateToUTC(apiQuery.startDate);
+    if (apiQuery.endDate)
+      baseFilter.date.$lte = parseDateToUTC(apiQuery.endDate);
 
     delete apiQuery.startDate;
     delete apiQuery.endDate;

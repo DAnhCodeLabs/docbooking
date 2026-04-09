@@ -75,6 +75,11 @@ const doctorProfileSchema = new mongoose.Schema(
       default: "pending",
     },
     rejectionReason: String,
+    rejectedAt: Date,
+    rejectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     verifiedAt: Date,
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -83,6 +88,14 @@ const doctorProfileSchema = new mongoose.Schema(
     isVerified: {
       type: Boolean,
       default: false,
+    },
+    totalReviews: {
+      type: Number,
+      default: 0,
+    },
+    sumRating: {
+      type: Number,
+      default: 0,
     },
   },
   {

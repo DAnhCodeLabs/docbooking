@@ -78,6 +78,7 @@ export const protect = asyncHandler(async (req, res, next) => {
  */
 export const restrictTo = (...roles) => {
   return (req, res, next) => {
+    console.log("User role:", req.user?.role);
     // Kiểm tra req.user đã tồn tại (phải gọi protect trước)
     if (!req.user) {
       throw new ApiError(

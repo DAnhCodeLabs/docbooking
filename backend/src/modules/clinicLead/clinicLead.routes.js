@@ -1,7 +1,7 @@
 import express from "express";
-import validate from "../../middlewares/validate.js";
 import { protect, restrictTo } from "../../middlewares/auth.js";
-import { parseSingleFile } from "../../middlewares/upload.js";
+import { singleFile } from "../../middlewares/upload.js";
+import validate from "../../middlewares/validate.js";
 import * as clinicLeadController from "./clinicLead.controller.js";
 import * as clinicLeadValidation from "./clinicLead.validation.js";
 
@@ -10,7 +10,7 @@ const router = express.Router();
 // Public
 router.post(
   "/register",
-  parseSingleFile("image", { limits: { fileSize: 2 * 1024 * 1024 } }), // THAY ĐỔI
+  singleFile("image", { limits: { fileSize: 2 * 1024 * 1024 } }),
   validate(clinicLeadValidation.registerClinicSchema),
   clinicLeadController.registerClinicLead,
 );

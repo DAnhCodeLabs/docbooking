@@ -8,6 +8,7 @@ import {
   PictureOutlined,
   SafetyCertificateOutlined,
   UserOutlined,
+  StarFilled,
 } from "@ant-design/icons";
 import { Avatar, Button, Empty, Image, Modal, Tag, Typography } from "antd";
 import { useState } from "react";
@@ -15,11 +16,9 @@ import { useNavigate } from "react-router-dom";
 
 const { Text } = Typography;
 
-// Component hiển thị bằng cấp
 const QualificationsList = ({ qualifications }) => {
-  if (!qualifications || qualifications.length === 0) {
+  if (!qualifications || qualifications.length === 0)
     return <Text type="secondary">Chưa cập nhật</Text>;
-  }
   return (
     <ul className="list-disc pl-5 text-slate-700">
       {qualifications.map((q, idx) => (
@@ -31,35 +30,32 @@ const QualificationsList = ({ qualifications }) => {
   );
 };
 
-// Component gallery ảnh hoạt động
-const ActivityGallery = ({ images, visible, onClose }) => {
-  return (
-    <Modal
-      open={visible}
-      onCancel={onClose}
-      footer={null}
-      title="Ảnh hoạt động của bác sĩ"
-      width={800}
-      centered
-    >
-      {images && images.length > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {images.map((img, idx) => (
-            <Image
-              key={idx}
-              src={img.url}
-              alt={`activity-${idx}`}
-              className="rounded-lg object-cover h-40 w-full"
-              preview={{ mask: "Xem" }}
-            />
-          ))}
-        </div>
-      ) : (
-        <Empty description="Bác sĩ chưa có ảnh hoạt động" />
-      )}
-    </Modal>
-  );
-};
+const ActivityGallery = ({ images, visible, onClose }) => (
+  <Modal
+    open={visible}
+    onCancel={onClose}
+    footer={null}
+    title="Ảnh hoạt động của bác sĩ"
+    width={800}
+    centered
+  >
+    {images && images.length > 0 ? (
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {images.map((img, idx) => (
+          <Image
+            key={idx}
+            src={img.url}
+            alt={`activity-${idx}`}
+            className="rounded-lg object-cover h-40 w-full"
+            preview={{ mask: "Xem" }}
+          />
+        ))}
+      </div>
+    ) : (
+      <Empty description="Bác sĩ chưa có ảnh hoạt động" />
+    )}
+  </Modal>
+);
 
 const InfoBlock = ({ icon, label, value, valueColor = "text-slate-800" }) => (
   <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-start gap-3">
@@ -77,10 +73,9 @@ const InfoBlock = ({ icon, label, value, valueColor = "text-slate-800" }) => (
   </div>
 );
 
-const DoctorDetailModal = ({ visible, doctor, onClose }) => {
+const DoctorDetailModal = ({ visible, doctor, onClose, avgRating = 0 }) => {
   const navigate = useNavigate();
   const [galleryVisible, setGalleryVisible] = useState(false);
-
   if (!doctor) return null;
 
   const clinicName =
@@ -89,6 +84,7 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
     "Chưa cập nhật nơi công tác";
   const clinicAddress =
     doctor.clinicId?.address || "Liên hệ để biết địa chỉ chi tiết";
+  const displayRating = avgRating > 0 ? avgRating.toFixed(1) : null;
 
   return (
     <>
@@ -103,7 +99,6 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
         className="rounded-2xl! overflow-hidden! shadow-xl!"
       >
         <div className="flex flex-col w-full relative">
-          {/* Nút Đóng */}
           <button
             onClick={onClose}
             className="absolute top-4 right-4 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition-colors cursor-pointer border-none"
@@ -111,7 +106,6 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
             <CloseOutlined className="text-sm!" />
           </button>
 
-          {/* HEADER */}
           <div className="p-6 sm:p-8 bg-white border-b border-slate-100 flex flex-col sm:flex-row items-center sm:items-start gap-5">
             <Avatar
               size={{ xs: 90, sm: 110 }}
@@ -140,18 +134,30 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
                     Đã xác minh
                   </span>
                 </div>
+                {/* Hiển thị rating */}
+                {displayRating ? (
+                  <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-full">
+                    <StarFilled className="text-yellow-500! text-sm!" />
+                    <span className="text-sm font-bold text-yellow-700">
+                      {displayRating}
+                    </span>
+                    <span className="text-xs text-slate-500">sao</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-400">
+                    Chưa có đánh giá
+                  </span>
+                )}
               </div>
 
               <div className="text-sm text-slate-500 line-clamp-2">
-                <EnvironmentOutlined className="mr-1!" />
-                {clinicName} - {clinicAddress}
+                <EnvironmentOutlined className="mr-1!" /> {clinicName} -{" "}
+                {clinicAddress}
               </div>
             </div>
           </div>
 
-          {/* BODY */}
           <div className="p-6 sm:p-8 bg-slate-50 flex flex-col gap-5">
-            {/* 2 cột thông tin cơ bản */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <InfoBlock
                 icon={
@@ -175,7 +181,6 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
               />
             </div>
 
-            {/* Giấy phép hành nghề */}
             <div className="bg-white p-5 rounded-xl border border-slate-200">
               <div className="flex items-start gap-3">
                 <IdcardOutlined className="text-slate-400! text-xl! mt-1!" />
@@ -190,7 +195,6 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
               </div>
             </div>
 
-            {/* Bằng cấp */}
             <div className="bg-white p-5 rounded-xl border border-slate-200">
               <div className="flex items-start gap-3">
                 <BookOutlined className="text-slate-400! text-xl! mt-1!" />
@@ -203,7 +207,6 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
               </div>
             </div>
 
-            {/* Mô tả bác sĩ */}
             <div className="bg-white p-5 rounded-xl border border-slate-200">
               <div className="flex items-start gap-3">
                 <UserOutlined className="text-slate-400! text-xl! mt-1!" />
@@ -219,9 +222,7 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
             </div>
           </div>
 
-          {/* FOOTER */}
           <div className="px-6 sm:px-8 py-5 bg-white border-t border-slate-100 flex flex-col sm:flex-row justify-end gap-3">
-            {/* Nút xem ảnh hoạt động */}
             {doctor.activityImages && doctor.activityImages.length > 0 && (
               <div className="flex justify-center">
                 <Button
@@ -235,7 +236,7 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
             )}
             <Button
               onClick={onClose}
-              className=" h-11! font-semibold! text-slate-600! border-slate-300! hover:border-slate-400! hover:text-slate-800! w-full! sm:w-auto!"
+              className="h-11! font-semibold! text-slate-600! border-slate-300! hover:border-slate-400! hover:text-slate-800! w-full! sm:w-auto!"
             >
               Đóng
             </Button>
@@ -245,14 +246,13 @@ const DoctorDetailModal = ({ visible, doctor, onClose }) => {
                 onClose();
                 navigate(`/booking/${doctor._id}`);
               }}
-              className="bg-blue-600! hover:bg-blue-700! text-white! border-none! font-bold!  h-11! px-8! w-full! sm:w-auto! shadow-sm! shadow-blue-600/20!"
+              className="bg-blue-600! hover:bg-blue-700! text-white! border-none! font-bold! h-11! px-8! w-full! sm:w-auto! shadow-sm! shadow-blue-600/20!"
             >
               Đặt lịch khám ngay
             </Button>
           </div>
         </div>
       </Modal>
-
       <ActivityGallery
         images={doctor.activityImages}
         visible={galleryVisible}

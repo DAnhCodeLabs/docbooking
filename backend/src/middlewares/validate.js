@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { StatusCodes } from "http-status-codes";
+import { z } from "zod";
 import ApiError from "../utils/ApiError.js";
 
 /**
@@ -26,25 +26,21 @@ const validate = (schemas = {}, options = { stripUnknown: true }) => {
 
     // Hàm xử lý từng phần (body, query, params)
     const parsePart = (partName, schema) => {
-      if (!schema) return; // Không có schema cho phần này thì bỏ qua
-
+      if (!schema) return;
       try {
-        // Nếu có option stripUnknown, dùng strip (loại bỏ trường lạ)
-        // Zod mặc định là strip khi parse, nhưng ta có thể cấu hình qua options
         let parsed;
         if (options.stripUnknown) {
-          parsed = schema.parse(req[partName]); // mặc định strip
+          // Giữ nguyên behavior cũ: loại bỏ field lạ, không báo lỗi
+          parsed = schema.parse(req[partName]);
         } else {
-          // Nếu không strip, dùng passthrough
-          parsed = schema.passthrough().parse(req[partName]);
+          // Khi không strip, yêu cầu strict để báo lỗi nếu có field lạ
+          parsed = schema.strict().parse(req[partName]);
         }
-        // Gán lại dữ liệu đã parse vào req (loại bỏ trường lạ nếu strip)
         req[partName] = parsed;
       } catch (error) {
         if (error instanceof z.ZodError) {
           errors.push(...formatZodError(error));
         } else {
-          // Lỗi khác (hiếm) thì ném tiếp
           next(error);
         }
       }

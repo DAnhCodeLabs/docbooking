@@ -5,7 +5,9 @@ import {
   CalendarOutlined,
   DollarOutlined,
   MedicineBoxOutlined,
+  MessageOutlined,
   PieChartOutlined,
+  StarFilled,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -17,6 +19,7 @@ import {
   DatePicker,
   Grid,
   Progress,
+  Rate,
   Row,
   Spin,
   Table,
@@ -32,6 +35,8 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -49,6 +54,7 @@ const DashboardPage = () => {
   const [dateRange, setDateRange] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dashboardData, setDashboardData] = useState(null);
+  const [reviewData, setReviewData] = useState(null);
   const [error, setError] = useState(null);
 
   const fetchDashboardData = async (startDate, endDate) => {
@@ -58,12 +64,20 @@ const DashboardPage = () => {
       const params = {};
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
-      const response = await httpGet("/admin/dashboard", params, false);
-      setDashboardData(response);
+      const [dashboardRes, reviewRes] = await Promise.all([
+        httpGet("/admin/dashboard", params, false),
+        httpGet("/admin/reviews", params, false).catch((err) => {
+          console.error("Lỗi tải review stats:", err);
+          return null;
+        }),
+      ]);
+      setDashboardData(dashboardRes);
+      setReviewData(reviewRes);
     } catch (err) {
       console.error("Lỗi tải dashboard:", err);
       setError(err?.message || "Không thể tải dữ liệu thống kê.");
       setDashboardData(null);
+      setReviewData(null);
     } finally {
       setLoading(false);
     }
@@ -226,6 +240,55 @@ const DashboardPage = () => {
         >
           {count}
         </Tag>
+      ),
+    },
+  ];
+
+  const performerColumns = [
+    {
+      title: "Hạng",
+      key: "rank",
+      width: 70,
+      render: (_, __, index) => (
+        <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-semibold">
+          {index + 1}
+        </div>
+      ),
+    },
+    {
+      title: "Đối tượng",
+      dataIndex: "name",
+      key: "name",
+      render: (text, record) => (
+        <div>
+          <div className="font-medium text-slate-700">{text}</div>
+          <Tag
+            color={record.type === "doctor" ? "blue" : "purple"}
+            className="rounded-sm! border-0! mt-1! text-[10px]!"
+          >
+            {record.type === "doctor" ? "Bác sĩ" : "Phòng khám"}
+          </Tag>
+        </div>
+      ),
+    },
+    {
+      title: "Đánh giá",
+      dataIndex: "averageRating",
+      key: "averageRating",
+      align: "center",
+      render: (rating) => (
+        <div className="flex items-center justify-center gap-1 font-semibold text-amber-500">
+          {rating} <StarFilled className="text-xs!" />
+        </div>
+      ),
+    },
+    {
+      title: "Số lượt",
+      dataIndex: "totalReviews",
+      key: "totalReviews",
+      align: "right",
+      render: (count) => (
+        <span className="font-medium text-slate-600">{count}</span>
       ),
     },
   ];
@@ -483,7 +546,7 @@ const DashboardPage = () => {
               </div>
             }
           >
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gradient-to-r from-emerald-50 to-teal-50 p-5 rounded-xl mb-6 border border-emerald-100">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-linear-to-r from-emerald-50 to-teal-50 p-5 rounded-xl mb-6 border border-emerald-100">
               <div>
                 <Text className="text-emerald-800! font-medium! block! mb-1!">
                   Tổng doanh thu
@@ -590,7 +653,7 @@ const DashboardPage = () => {
           >
             {dashboardData.dailyAppointments &&
             dashboardData.dailyAppointments.length > 0 ? (
-              <div className="h-[320px] w-full mt-2">
+              <div className="h-80 w-full mt-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={dailyChartData}
@@ -654,7 +717,7 @@ const DashboardPage = () => {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-[320px] flex items-center justify-center text-slate-400">
+              <div className="h-80 flex items-center justify-center text-slate-400">
                 Chưa có dữ liệu lịch hẹn
               </div>
             )}
@@ -672,7 +735,7 @@ const DashboardPage = () => {
               </div>
             }
           >
-            <div className="h-[320px] w-full mt-2">
+            <div className="h-80 w-full mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={groupDataByWeek(dashboardData.dailyRevenue, "date")}
@@ -767,7 +830,7 @@ const DashboardPage = () => {
               </div>
             }
           >
-            <div className="h-[280px] w-full flex flex-col items-center justify-center">
+            <div className="h-70 w-full flex flex-col items-center justify-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -859,6 +922,207 @@ const DashboardPage = () => {
           </Row>
         </Col>
       </Row>
+
+      {/* THỐNG KÊ ĐÁNH GIÁ */}
+      {reviewData && (
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <MessageOutlined className="text-2xl text-indigo-500" />
+            <Title level={3} className="m-0! text-slate-800! font-bold!">
+              Thống kê đánh giá chất lượng
+            </Title>
+          </div>
+
+          <Row gutter={[16, 16]} className="mb-6!">
+            {/* Tổng quan & Phân bố */}
+            <Col xs={24} lg={8}>
+              <Card
+                className="rounded-2xl! shadow-sm! border-0! h-full!"
+                title={
+                  <span className="font-semibold text-slate-800">
+                    Tổng quan đánh giá
+                  </span>
+                }
+              >
+                <div className="flex flex-col items-center justify-center mb-6">
+                  <div className="text-5xl font-bold text-slate-800 mb-2">
+                    {reviewData.overview.averageRating}
+                  </div>
+                  <Rate
+                    disabled
+                    allowHalf
+                    value={reviewData.overview.averageRating}
+                    className="text-amber-400 text-lg!"
+                  />
+                  <Text className="text-slate-500! mt-2! font-medium!">
+                    Dựa trên {reviewData.overview.totalReviews} lượt đánh giá
+                  </Text>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {[5, 4, 3, 2, 1].map((star) => {
+                    const count = reviewData.distribution[`star${star}`] || 0;
+                    const total = reviewData.overview.totalReviews || 1;
+                    const percent = (count / total) * 100;
+                    return (
+                      <div key={star} className="flex items-center gap-3">
+                        <div className="w-8 flex items-center justify-end gap-1 text-slate-600 font-medium text-sm">
+                          {star}{" "}
+                          <StarFilled className="text-amber-400 text-xs!" />
+                        </div>
+                        <Progress
+                          percent={percent}
+                          showInfo={false}
+                          strokeColor="#f59e0b"
+                          trailColor="#f1f5f9"
+                          className="m-0! flex-1"
+                        />
+                        <div className="w-8 text-right text-xs text-slate-500 font-medium">
+                          {count}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            </Col>
+
+            {/* Xu hướng đánh giá */}
+            <Col xs={24} lg={16}>
+              <Card
+                className="rounded-2xl! shadow-sm! border-0! h-full!"
+                title={
+                  <span className="font-semibold text-slate-800">
+                    Xu hướng điểm đánh giá
+                  </span>
+                }
+              >
+                {reviewData.trend && reviewData.trend.length > 0 ? (
+                  <div className="h-80 w-full mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={reviewData.trend}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="#f1f5f9"
+                        />
+                        <XAxis
+                          dataKey="date"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 12 }}
+                          dy={10}
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          domain={[0, 5]}
+                          ticks={[1, 2, 3, 4, 5]}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 12 }}
+                          width={30}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 12 }}
+                          width={30}
+                        />
+                        <Tooltip
+                          contentStyle={customTooltipStyle}
+                          formatter={(value, name) => [
+                            value,
+                            name === "average" ? "Điểm TB" : "Số lượt",
+                          ]}
+                          labelFormatter={(label) => `Ngày: ${label}`}
+                        />
+                        <Legend
+                          iconType="circle"
+                          wrapperStyle={{
+                            paddingTop: "20px",
+                            fontSize: "13px",
+                          }}
+                        />
+                        <Line
+                          yAxisId="left"
+                          type="monotone"
+                          dataKey="average"
+                          name="Điểm TB"
+                          stroke="#f59e0b"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: "#f59e0b", strokeWidth: 0 }}
+                          activeDot={{ r: 6 }}
+                        />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="count"
+                          name="Số lượt"
+                          stroke="#3b82f6"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: "#3b82f6", strokeWidth: 0 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-80 flex items-center justify-center text-slate-400">
+                    Chưa có dữ liệu xu hướng
+                  </div>
+                )}
+              </Card>
+            </Col>
+          </Row>
+
+          <Row gutter={[16, 16]} className="mb-6!">
+            <Col xs={24} xl={12}>
+              <Card
+                className="rounded-2xl! shadow-sm! border-0! h-full! overflow-hidden!"
+                styles={{ body: { padding: 0 } }}
+                title={
+                  <span className="font-semibold text-slate-800 px-2">
+                    Top 5 được đánh giá cao nhất
+                  </span>
+                }
+              >
+                <Table
+                  columns={performerColumns}
+                  dataSource={reviewData.topPerformers}
+                  rowKey="id"
+                  pagination={false}
+                  scroll={{ x: "max-content" }}
+                  className="[&_.ant-table-thead_th]:bg-slate-50! [&_.ant-table-thead_th]:text-slate-500! [&_.ant-table-thead_th]:font-medium! [&_.ant-table-tbody_td]:py-3!"
+                />
+              </Card>
+            </Col>
+            <Col xs={24} xl={12}>
+              <Card
+                className="rounded-2xl! shadow-sm! border-0! h-full! overflow-hidden!"
+                styles={{ body: { padding: 0 } }}
+                title={
+                  <span className="font-semibold text-slate-800 px-2">
+                    Top 5 cần cải thiện
+                  </span>
+                }
+              >
+                <Table
+                  columns={performerColumns}
+                  dataSource={reviewData.bottomPerformers}
+                  rowKey="id"
+                  pagination={false}
+                  scroll={{ x: "max-content" }}
+                  className="[&_.ant-table-thead_th]:bg-slate-50! [&_.ant-table-thead_th]:text-slate-500! [&_.ant-table-thead_th]:font-medium! [&_.ant-table-tbody_td]:py-3!"
+                />
+              </Card>
+            </Col>
+          </Row>
+        </div>
+      )}
 
       {/* Footer Info */}
       <div className="mt-8 text-center md:text-right text-slate-400 text-xs">

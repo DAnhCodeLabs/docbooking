@@ -37,3 +37,57 @@ export const dashboardQuerySchema = z.object({
       },
     ),
 });
+
+export const getReviewStatsSchema = z.object({
+  query: z
+    .object({
+      startDate: z
+        .string()
+        .regex(
+          /^\d{4}-\d{2}-\d{2}$/,
+          "Ngày bắt đầu phải có định dạng YYYY-MM-DD",
+        )
+        .optional(),
+      endDate: z
+        .string()
+        .regex(
+          /^\d{4}-\d{2}-\d{2}$/,
+          "Ngày kết thúc phải có định dạng YYYY-MM-DD",
+        )
+        .optional(),
+      entityType: z.enum(["all", "doctor", "clinic"]).default("all"),
+      limitTop: z.preprocess(
+        (val) => parseInt(val, 10) || 5,
+        z.number().min(1).max(50),
+      ),
+    })
+    .refine(
+      (data) => {
+        if (data.startDate && data.endDate) {
+          const start = dayjs(data.startDate);
+          const end = dayjs(data.endDate);
+          if (start.isAfter(end)) return false;
+        }
+        return true;
+      },
+      {
+        message: "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc",
+        path: ["startDate"],
+      },
+    )
+    .refine(
+      (data) => {
+        if (data.startDate && data.endDate) {
+          const start = dayjs(data.startDate);
+          const end = dayjs(data.endDate);
+          if (end.diff(start, "day") > 365) return false;
+        }
+        return true;
+      },
+      {
+        message:
+          "Khoảng thời gian truy vấn tối đa không được vượt quá 365 ngày để đảm bảo hiệu năng",
+        path: ["endDate"],
+      },
+    ),
+});

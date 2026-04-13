@@ -539,6 +539,12 @@ export const getClinicReviewStats = async (userId, query = {}) => {
   const sortDirection = sortBy === "avgRating" ? -1 : -1; // cả hai đều giảm dần
   const topDoctorsPipeline = [
     ...doctorStatsPipeline,
+    {
+      $match: {
+        totalReviews: { $gt: 0 },
+        avgRating: { $gte: 4 }, // Từ 4 sao trở lên
+      },
+    },
     { $sort: { [sortBy]: -1 } },
     { $limit: limit },
   ];
@@ -548,7 +554,7 @@ export const getClinicReviewStats = async (userId, query = {}) => {
     {
       $match: {
         totalReviews: { $gt: 0 },
-        avgRating: { $lt: 4 }, // Chỉ lấy bác sĩ có điểm dưới 4
+        avgRating: { $lte: 3.9 }, // Từ 3.9 sao trở xuống
       },
     },
     { $sort: { [sortBy]: 1 } },

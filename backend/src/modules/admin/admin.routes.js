@@ -49,6 +49,8 @@ router
     "/dashboard",
     validate(dashboardQuerySchema),
     dashboardController.getDashboard,
-  );
+);
+
+router.get("/reviews", dashboardController.getReviewStatistics);
 
 export default router;

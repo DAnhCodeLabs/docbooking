@@ -1,0 +1,11 @@
+# Bỏ qua môi trường ảo
+myenv/
+venv/
+env/
+
+# Bỏ qua file chứa API Key
+.env
+
+# Bỏ qua các file cache của Python
+__pycache__/
+*.pyc

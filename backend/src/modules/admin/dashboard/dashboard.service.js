@@ -6,9 +6,11 @@ import Appointment from "../../../models/Appointment.js";
 import ClinicLead from "../../../models/ClinicLead.js";
 import Payment from "../../../models/Payment.js";
 import RevenueSplit from "../../../models/RevenueSplit.js";
+import Review from "../../../models/Review.js";
 import Specialty from "../../../models/Specialty.js";
 import User from "../../../models/User.js";
 import ApiError from "../../../utils/ApiError.js";
+import { parseDateToUTC } from "../../../utils/date.js";
 import logger from "../../../utils/logger.js";
 
 dayjs.extend(utc);
@@ -589,4 +591,222 @@ export const getDashboardStats = async (startDate, endDate) => {
       "Không thể lấy dữ liệu thống kê, vui lòng thử lại sau.",
     );
   }
+};
+
+export const getSystemReviewStatistics = async (query) => {
+  const { startDate, endDate, entityType, limitTop } = query;
+
+  // 1. Chuẩn hóa thời gian (Mặc định 30 ngày gần nhất nếu không truyền param)
+  const to = endDate
+    ? dayjs.utc(endDate).endOf("day").toDate()
+    : dayjs.utc().endOf("day").toDate();
+  const from = startDate
+    ? parseDateToUTC(startDate)
+    : dayjs.utc(to).subtract(30, "day").startOf("day").toDate();
+
+  // 2. Xây dựng $match base chặn review rác/xóa mềm
+  const baseMatch = {
+    createdAt: { $gte: from, $lte: to },
+    isDeleted: { $ne: true },
+    $or: [
+      { status: { $exists: false } },
+      { status: { $in: ["approved", "active", "published"] } },
+    ],
+  };
+
+  if (entityType === "doctor") {
+    baseMatch.doctorId = { $exists: true, $ne: null };
+  } else if (entityType === "clinic") {
+    baseMatch.clinicId = { $exists: true, $ne: null };
+  }
+
+  // 3. Pipeline Facet chạy song song đa luồng tính toán
+  const facetPipeline = {
+    overview: [
+      {
+        $group: {
+          _id: null,
+          totalReviews: { $sum: 1 },
+          averageRating: { $avg: "$rating" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalReviews: 1,
+          averageRating: { $round: [{ $ifNull: ["$averageRating", 0] }, 1] },
+        },
+      },
+    ],
+    distribution: [
+      { $group: { _id: "$rating", count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ],
+    trend: [
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          average: { $avg: "$rating" },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          date: "$_id",
+          average: { $round: [{ $ifNull: ["$average", 0] }, 1] },
+          count: 1,
+          _id: 0,
+        },
+      },
+    ],
+  };
+
+  // 4. Xử lý Leaderboard
+  const MIN_REVIEWS = 1; // Tạm thời hạ xuống 1 để test bảng xếp hạng
+
+  if (entityType === "doctor" || entityType === "all") {
+    const doctorRankPipeline = [
+      { $match: { doctorId: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: "$doctorId",
+          totalReviews: { $sum: 1 },
+          averageRating: { $avg: "$rating" },
+        },
+      },
+      { $match: { totalReviews: { $gte: MIN_REVIEWS } } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "doctorUser",
+        },
+      },
+      { $unwind: { path: "$doctorUser", preserveNullAndEmptyArrays: false } },
+      { $match: { "doctorUser.status": "active" } }, // Chặn bác sĩ đã bị admin xoá mềm/khoá
+      {
+        $project: {
+          id: "$_id",
+          name: "$doctorUser.fullName",
+          type: "doctor",
+          averageRating: { $round: [{ $ifNull: ["$averageRating", 0] }, 1] },
+          totalReviews: 1,
+          _id: 0,
+        },
+      },
+    ];
+
+    facetPipeline.topDoctors = [
+      ...doctorRankPipeline,
+      { $match: { averageRating: { $gte: 4.5 } } },
+      { $sort: { averageRating: -1, totalReviews: -1 } },
+      { $limit: limitTop },
+    ];
+    facetPipeline.bottomDoctors = [
+      ...doctorRankPipeline,
+      { $match: { averageRating: { $lte: 4.0 } } },
+      { $sort: { averageRating: 1, totalReviews: -1 } },
+      { $limit: limitTop },
+    ];
+  }
+
+  if (entityType === "clinic" || entityType === "all") {
+    const clinicRankPipeline = [
+      { $match: { clinicId: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: "$clinicId",
+          totalReviews: { $sum: 1 },
+          averageRating: { $avg: "$rating" },
+        },
+      },
+      { $match: { totalReviews: { $gte: MIN_REVIEWS } } },
+      {
+        $lookup: {
+          from: "clinicleads",
+          localField: "_id",
+          foreignField: "_id",
+          as: "clinicInfo",
+        },
+      },
+      { $unwind: { path: "$clinicInfo", preserveNullAndEmptyArrays: false } },
+      { $match: { "clinicInfo.status": "resolved" } }, // Chặn phòng khám đã bị huỷ hợp tác
+      {
+        $project: {
+          id: "$_id",
+          name: "$clinicInfo.clinicName",
+          type: "clinic",
+          averageRating: { $round: [{ $ifNull: ["$averageRating", 0] }, 1] },
+          totalReviews: 1,
+          _id: 0,
+        },
+      },
+    ];
+
+    facetPipeline.topClinics = [
+      ...clinicRankPipeline,
+      { $match: { averageRating: { $gte: 4.5 } } },
+      { $sort: { averageRating: -1, totalReviews: -1 } },
+      { $limit: limitTop },
+    ];
+    facetPipeline.bottomClinics = [
+      ...clinicRankPipeline,
+      { $match: { averageRating: { $lte: 4.0 } } },
+      { $sort: { averageRating: 1, totalReviews: -1 } },
+      { $limit: limitTop },
+    ];
+  }
+
+  // 5. Thực thi Aggregation trong 1 lần gọi DB duy nhất
+  const [result] = await Review.aggregate([
+    { $match: baseMatch },
+    { $facet: facetPipeline },
+  ]);
+
+  // 6. Trích xuất và Format dữ liệu an toàn
+  const overview = result.overview[0] || { totalReviews: 0, averageRating: 0 };
+  const distribution = { star1: 0, star2: 0, star3: 0, star4: 0, star5: 0 };
+
+  (result.distribution || []).forEach((item) => {
+    if (item._id >= 1 && item._id <= 5)
+      distribution[`star${item._id}`] = item.count;
+  });
+
+  let topPerformers = [];
+  let bottomPerformers = [];
+
+  if (entityType === "all") {
+    topPerformers = [...(result.topDoctors || []), ...(result.topClinics || [])]
+      .sort(
+        (a, b) =>
+          b.averageRating - a.averageRating || b.totalReviews - a.totalReviews,
+      )
+      .slice(0, limitTop);
+
+    bottomPerformers = [
+      ...(result.bottomDoctors || []),
+      ...(result.bottomClinics || []),
+    ]
+      .sort(
+        (a, b) =>
+          a.averageRating - b.averageRating || b.totalReviews - a.totalReviews,
+      )
+      .slice(0, limitTop);
+  } else if (entityType === "doctor") {
+    topPerformers = result.topDoctors || [];
+    bottomPerformers = result.bottomDoctors || [];
+  } else if (entityType === "clinic") {
+    topPerformers = result.topClinics || [];
+    bottomPerformers = result.bottomClinics || [];
+  }
+
+  return {
+    overview,
+    distribution,
+    trend: result.trend || [],
+    topPerformers,
+    bottomPerformers,
+  };
 };

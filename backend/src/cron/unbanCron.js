@@ -10,8 +10,8 @@ import logger from "../utils/logger.js";
 export const startUnbanCronJob = () => {
   cron.schedule("* * * * *", async () => {
     try {
-      const now = new Date();
-
+      const now = new Date(); 
+ 
       // 1. Tìm các user bị khóa có thời gian bannedUntil <= hiện tại
       // (Truy vấn siêu nhanh nhờ Compound Index đã tạo ở User model)
       const usersToUnban = await User.find({

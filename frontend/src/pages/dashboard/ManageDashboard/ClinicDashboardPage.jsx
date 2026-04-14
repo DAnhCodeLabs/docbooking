@@ -468,7 +468,7 @@ const ClinicDashboardPage = () => {
       <ClinicReviewStats dateRange={dateRange} />
 
       {/* Footer */}
-      <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+      {/* <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
         <Text className="text-slate-500! text-sm!">
           Dữ liệu báo cáo nội bộ phòng khám.
         </Text>
@@ -482,7 +482,7 @@ const ClinicDashboardPage = () => {
             {formatDateUTC(overview.period.endDate, "DD/MM/YYYY")}
           </span>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

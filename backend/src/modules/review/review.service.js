@@ -1,10 +1,10 @@
-import { StatusCodes } from "http-status-codes";
-import mongoose from "mongoose";
-import Appointment from "../../models/Appointment.js";
-import Review from "../../models/Review.js";
-import User from "../../models/User.js";
-import ApiError from "../../utils/ApiError.js";
-import logger from "../../utils/logger.js";
+import { StatusCodes } from 'http-status-codes';
+import mongoose from 'mongoose';
+import Appointment from '../../models/Appointment.js';
+import Review from '../../models/Review.js';
+import User from '../../models/User.js';
+import ApiError from '../../utils/ApiError.js';
+import logger from '../../utils/logger.js';
 
 /**
  * Tạo đánh giá mới
@@ -14,25 +14,25 @@ export const createReview = async (userId, data) => {
 
   // 1. Tìm appointment, kiểm tra quyền và trạng thái
   const appointment = await Appointment.findById(appointmentId)
-    .populate("bookingUser", "_id")
-    .populate("doctor", "_id");
+    .populate('bookingUser', '_id')
+    .populate('doctor', '_id');
   if (!appointment) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy lịch hẹn.");
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lịch hẹn.');
   }
 
   // Kiểm tra user chính là người đặt lịch
   if (appointment.bookingUser._id.toString() !== userId.toString()) {
     throw new ApiError(
       StatusCodes.FORBIDDEN,
-      "Bạn không có quyền đánh giá lịch hẹn này.",
+      'Bạn không có quyền đánh giá lịch hẹn này.'
     );
   }
 
   // Chỉ được đánh giá khi ca khám đã hoàn thành
-  if (appointment.status !== "completed") {
+  if (appointment.status !== 'completed') {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      "Chỉ có thể đánh giá sau khi ca khám hoàn thành.",
+      'Chỉ có thể đánh giá sau khi ca khám hoàn thành.'
     );
   }
 
@@ -41,7 +41,7 @@ export const createReview = async (userId, data) => {
   if (existingReview) {
     throw new ApiError(
       StatusCodes.CONFLICT,
-      "Bạn đã đánh giá lịch hẹn này rồi.",
+      'Bạn đã đánh giá lịch hẹn này rồi.'
     );
   }
 
@@ -51,7 +51,7 @@ export const createReview = async (userId, data) => {
     patientId: userId,
     doctorId: appointment.doctor._id,
     rating,
-    comment: comment || "",
+    comment: comment || '',
   });
 
   return review;
@@ -65,7 +65,7 @@ export const getMyReviews = async (userId, page, limit) => {
 
   const [reviews, total] = await Promise.all([
     Review.find({ patientId: userId })
-      .populate("doctorId", "fullName avatar")
+      .populate('doctorId', 'fullName avatar')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -87,16 +87,16 @@ export const getMyReviews = async (userId, page, limit) => {
  */
 export const getDoctorReviews = async (doctorId, page, limit) => {
   // Kiểm tra bác sĩ tồn tại (tuỳ chọn, nhưng nên có)
-  const doctor = await User.findById(doctorId).select("_id");
+  const doctor = await User.findById(doctorId).select('_id');
   if (!doctor) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy bác sĩ.");
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy bác sĩ.');
   }
 
   const skip = (page - 1) * limit;
 
   const [reviews, total, ratingAgg] = await Promise.all([
     Review.find({ doctorId })
-      .populate("patientId", "fullName avatar") // có thể ẩn bớt thông tin nhạy cảm
+      .populate('patientId', 'fullName avatar') // có thể ẩn bớt thông tin nhạy cảm
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -104,7 +104,7 @@ export const getDoctorReviews = async (doctorId, page, limit) => {
     Review.countDocuments({ doctorId }),
     Review.aggregate([
       { $match: { doctorId: new mongoose.Types.ObjectId(doctorId) } },
-      { $group: { _id: null, avgRating: { $avg: "$rating" } } },
+      { $group: { _id: null, avgRating: { $avg: '$rating' } } },
     ]),
   ]);
 
@@ -129,14 +129,14 @@ export const getDoctorReviews = async (doctorId, page, limit) => {
  * @returns {Promise<Object>}
  */
 export const getReviewStats = async (doctorId, query = {}) => {
-  const { startDate, endDate, groupBy = "month" } = query;
+  const { startDate, endDate, groupBy = 'month' } = query;
 
   logger.info(`[ReviewStats] doctorId from token: ${doctorId}`);
   const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
   logger.info(`[ReviewStats] doctorId from token: ${doctorId}`);
   const totalDocs = await Review.countDocuments({ doctorId: doctorObjectId });
   logger.info(
-    `[ReviewStats] Total reviews for this doctor (without date filter): ${totalDocs}`,
+    `[ReviewStats] Total reviews for this doctor (without date filter): ${totalDocs}`
   );
   const match = { doctorId: doctorObjectId };
 
@@ -155,19 +155,19 @@ export const getReviewStats = async (doctorId, query = {}) => {
 
   // 3. Facet để tính tổng quan và distribution
   const facet = {
-    totalReviews: [{ $count: "count" }],
-    averageRating: [{ $group: { _id: null, avg: { $avg: "$rating" } } }],
+    totalReviews: [{ $count: 'count' }],
+    averageRating: [{ $group: { _id: null, avg: { $avg: '$rating' } } }],
     ratingDistribution: [
       {
         $group: {
-          _id: "$rating",
+          _id: '$rating',
           count: { $sum: 1 },
         },
       },
       {
         $project: {
           _id: 0,
-          rating: "$_id",
+          rating: '$_id',
           count: 1,
         },
       },
@@ -179,26 +179,26 @@ export const getReviewStats = async (doctorId, query = {}) => {
   if (groupBy) {
     let dateFormat;
     switch (groupBy) {
-      case "week":
-        dateFormat = { $isoWeek: "$createdAt" }; // tuần trong năm
+      case 'week':
+        dateFormat = { $isoWeek: '$createdAt' }; // tuần trong năm
         break;
-      case "month":
-        dateFormat = { $month: "$createdAt" };
+      case 'month':
+        dateFormat = { $month: '$createdAt' };
         break;
-      case "quarter":
-        dateFormat = { $quarter: "$createdAt" };
+      case 'quarter':
+        dateFormat = { $quarter: '$createdAt' };
         break;
       default:
-        dateFormat = { $month: "$createdAt" };
+        dateFormat = { $month: '$createdAt' };
     }
     trendPipeline = [
       {
         $group: {
           _id: {
-            year: { $year: "$createdAt" },
+            year: { $year: '$createdAt' },
             period: dateFormat,
           },
-          avgRating: { $avg: "$rating" },
+          avgRating: { $avg: '$rating' },
           count: { $sum: 1 },
         },
       },
@@ -207,12 +207,12 @@ export const getReviewStats = async (doctorId, query = {}) => {
           _id: 0,
           period: {
             $concat: [
-              { $toString: "$_id.year" },
-              "-",
-              { $toString: "$_id.period" },
+              { $toString: '$_id.year' },
+              '-',
+              { $toString: '$_id.period' },
             ],
           },
-          avgRating: { $round: ["$avgRating", 1] },
+          avgRating: { $round: ['$avgRating', 1] },
           count: 1,
         },
       },

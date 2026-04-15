@@ -67,7 +67,7 @@ export const createSpecialty = async (data, adminId, ipAddress, userAgent) => {
     if (imageUrl) {
       await deleteFromCloudinary(imageUrl).catch(() => {});
     }
-    throw error; // để errorHandler xử lý
+    throw error;
   }
 };
 

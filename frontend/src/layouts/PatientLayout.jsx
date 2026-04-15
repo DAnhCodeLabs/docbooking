@@ -1,6 +1,7 @@
-import Footer from "@/components/Footer";
-import Header from "@/components/Header";
-import { Outlet } from "react-router-dom";
+import MedicalChatbot from '@/components/Chatbot';
+import Footer from '@/components/Footer';
+import Header from '@/components/Header';
+import { Outlet } from 'react-router-dom';
 
 const PatientLayout = () => {
   return (
@@ -12,6 +13,7 @@ const PatientLayout = () => {
         </div>
       </main>
       <Footer />
+      <MedicalChatbot />
     </div>
   );
 };

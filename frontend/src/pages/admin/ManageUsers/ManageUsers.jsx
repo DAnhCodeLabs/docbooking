@@ -19,6 +19,7 @@ const roleMap = {
   patient: { color: "blue", text: "Bệnh nhân" },
   doctor: { color: "cyan", text: "Bác sĩ" },
   admin: { color: "purple", text: "Quản trị" },
+  clinic_admin: { color: "geekblue", text: "Quản trị bệnh viện" },
 };
 
 const statusMap = {
@@ -131,6 +132,7 @@ const ManageUsers = () => {
         { label: "Bệnh nhân", value: "patient" },
         { label: "Bác sĩ", value: "doctor" },
         { label: "Quản trị", value: "admin" },
+        { label: "Bệnh viện", value: "clinic_admin" },
       ],
     },
     {

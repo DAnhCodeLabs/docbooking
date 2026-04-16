@@ -362,7 +362,7 @@ export const processPrivateChat = asyncHandler(async (req, res) => {
               filteredApps.length
             );
           } else {
-            replyText = 'Không tìm thấy cuộc hẹn nào với bác sĩ này.';
+            replyText = 'Không tìm thấy cuộc hẹn nào.';
           }
           actionLogged = 'VIEW_APPOINTMENT_HISTORY';
           break;

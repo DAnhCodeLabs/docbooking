@@ -150,7 +150,7 @@ const MedicalChatbot = () => {
 
     try {
       const apiUrl = isAuthenticated ? '/chatbot/private' : '/chatbot';
- 
+
       let response;
       if (isAuthenticated) {
         response = await axiosClient.post(apiUrl, { sessionId, message: text });
@@ -214,7 +214,7 @@ const MedicalChatbot = () => {
             className={`bg-white shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex flex-col overflow-hidden border border-slate-200 ${
               isMaximized
                 ? 'w-full h-full rounded-none'
-                : 'w-[calc(100vw-2rem)] md:w-110 h-[80vh] md:h-[85vh] min-h-125 md:min-h-150 max-h-212.5 rounded-3xl md:rounded-4xl'
+                : 'w-[calc(100vw-2rem)] md:w-150 h-[80vh] md:h-[85vh] min-h-125 md:min-h-150 max-h-212.5 rounded-3xl md:rounded-4xl'
             }`}
           >
             {/* Header */}

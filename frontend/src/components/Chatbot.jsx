@@ -150,7 +150,7 @@ const MedicalChatbot = () => {
 
     try {
       const apiUrl = isAuthenticated ? '/chatbot/private' : '/chatbot';
-
+ 
       let response;
       if (isAuthenticated) {
         response = await axiosClient.post(apiUrl, { sessionId, message: text });

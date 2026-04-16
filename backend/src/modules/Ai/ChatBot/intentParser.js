@@ -39,7 +39,13 @@ export const parsePatientQuery = (message) => {
   result.status = extractStatus(lowerMsg);
 
   // 5. Nếu không có type và không có tham số nào hữu ích -> đánh dấu không nhận diện được
-  if (!result.type && !result.date && !result.relativeTime && !result.doctorName && !result.status) {
+  if (
+    !result.type &&
+    !result.date &&
+    !result.relativeTime &&
+    !result.doctorName &&
+    !result.status
+  ) {
     result.unrecognized = true;
   }
 
@@ -54,19 +60,27 @@ export const parsePatientQuery = (message) => {
  * @returns {string|null}
  */
 const detectType = (lowerMsg) => {
-  // Ưu tiên consultation (kết quả khám, đơn thuốc)
-  if (/kết quả khám|chẩn đoán|đơn thuốc|toa thuốc|hướng dẫn|tái khám/.test(lowerMsg)) {
-    return 'consultation';
-  }
-  // appointment (lịch hẹn, lịch sử khám)
-  if (/lịch hẹn|cuộc hẹn|lịch khám|lịch sử khám|khám bệnh|đặt lịch|lịch hẹn sắp tới/.test(lowerMsg)) {
+  // 1. Appointment – lịch hẹn, lịch sử khám
+  if (
+    /lịch hẹn|cuộc hẹn|lịch khám|lịch sử khám|khám bệnh|đặt lịch|lịch hẹn sắp tới/.test(
+      lowerMsg
+    )
+  ) {
     return 'appointment';
   }
-  // medicalRecord (hồ sơ, bảo hiểm, nhóm máu, dị ứng, CCCD)
-  if (/hồ sơ|bảo hiểm|nhóm máu|dị ứng|cccd|thông tin cá nhân|thẻ bảo hiểm/.test(lowerMsg)) {
+  // 2. Consultation – kết quả khám, đơn thuốc
+  if (
+    /kết quả khám|chẩn đoán|đơn thuốc|toa thuốc|hướng dẫn|tái khám/.test(
+      lowerMsg
+    )
+  ) {
+    return 'consultation';
+  }
+  // 3. Medical record – hồ sơ, bảo hiểm,...
+  if (/hồ sơ|bảo hiểm|nhóm máu|dị ứng|cccd|thông tin cá nhân/.test(lowerMsg)) {
     return 'medicalRecord';
   }
-  // payment (thanh toán, tiền nợ, hoàn tiền)
+  // 4. Payment – thanh toán
   if (/thanh toán|tiền|nợ|hoàn tiền|đã trả|chưa trả|chi phí/.test(lowerMsg)) {
     return 'payment';
   }
@@ -137,6 +151,6 @@ const extractStatus = (lowerMsg) => {
   if (/đã hoàn thành|completed/.test(lowerMsg)) return 'completed';
   if (/đã hủy|cancelled/.test(lowerMsg)) return 'cancelled';
   if (/chờ thanh toán|pending/.test(lowerMsg)) return 'pending_payment';
-  if (/đã xác nhận|confirmed/.test(lowerMsg)) return 'confirmed';
-  return null;
+  if (/đã hoàn thành|hoàn thành|completed/.test(lowerMsg)) return 'completed';
+  return null;  
 };

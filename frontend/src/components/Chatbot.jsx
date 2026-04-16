@@ -16,6 +16,8 @@ import {
 } from '@ant-design/icons';
 import { images } from '@/assets';
 import { httpPost } from '@/services/http';
+import { useAuthStore } from '@/stores/authStore';
+import axiosClient from '@/services/axiosClient';
 
 // Hàm chuyển markdown đơn giản sang HTML an toàn (chỉ cho phép các tag cơ bản)
 const formatMarkdownToHtml = (text) => {
@@ -72,6 +74,7 @@ const MedicalChatbot = () => {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
+  const { isAuthenticated } = useAuthStore();
 
   // Tạo hoặc lấy sessionId từ localStorage
   const [sessionId] = useState(() => {
@@ -146,10 +149,17 @@ const MedicalChatbot = () => {
     setIsTyping(true);
 
     try {
-      const response = await httpPost('/chatbot', { sessionId, message: text });
+      const apiUrl = isAuthenticated ? '/chatbot/private' : '/chatbot';
+
+      let response;
+      if (isAuthenticated) {
+        response = await axiosClient.post(apiUrl, { sessionId, message: text });
+      } else {
+        response = await httpPost(apiUrl, { sessionId, message: text }, false);
+      }
       // response là data đã được unwrap bởi http.js
       const botReply =
-        response?.data?.reply ||
+        response?.message?.reply ||
         response?.reply ||
         'Xin lỗi, tôi chưa hiểu câu hỏi của bạn.';
       const botMsg = {

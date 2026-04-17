@@ -127,13 +127,6 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-// Virtual populate
-userSchema.virtual("patientProfile", {
-  ref: "PatientProfile",
-  localField: "_id",
-  foreignField: "user",
-  justOne: true,
-});
 
 userSchema.virtual("doctorProfile", {
   ref: "DoctorProfile",

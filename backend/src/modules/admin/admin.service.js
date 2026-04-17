@@ -6,7 +6,6 @@ import User from "../../models/User.js";
 import ApiError from "../../utils/ApiError.js";
 import ApiFeatures from "../../utils/ApiFeatures.js";
 import logger from "../../utils/logger.js";
-import PatientProfile from "../../models/PatientProfile.js";
 import Schedule from "../../models/Schedule.js";
 import Appointment from "../../models/Appointment.js";
 import { getTodayUTC } from "../../utils/date.js";

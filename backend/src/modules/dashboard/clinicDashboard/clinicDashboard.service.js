@@ -112,7 +112,7 @@ export const getClinicDashboardStats = async (userId, startDate, endDate) => {
       },
       {
         $group: {
-          _id: "$patientProfile",
+          _id: "$patientId",
         },
       },
       { $count: "total" },

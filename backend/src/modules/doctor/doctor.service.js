@@ -955,7 +955,7 @@ export const getMyPatients = async (doctorId, query) => {
     {
       $lookup: {
         from: "medicalrecords",
-        localField: "patientProfile",
+        localField: "patientId",
         foreignField: "_id",
         as: "patientInfo",
       },
@@ -1075,7 +1075,7 @@ export const getPatientAppointments = async (doctorId, patientId, query) => {
     {
       $match: {
         doctor: doctorObjectId,
-        patientProfile: patientObjectId,
+        patientId: patientObjectId,
         status: "completed",
       },
     },
@@ -1215,7 +1215,7 @@ export const getDoctorDashboardStats = async (doctorId, startDate, endDate) => {
           },
           {
             $group: {
-              _id: "$patientProfile",
+              _id: "$patientId",
             },
           },
           { $count: "total" },
@@ -1356,7 +1356,7 @@ export const getDoctorDashboardStats = async (doctorId, startDate, endDate) => {
     { $match: { status: "completed" } },
     {
       $group: {
-        _id: "$patientProfile",
+        _id: "$patientId",
         appointmentCount: { $sum: 1 },
       },
     },

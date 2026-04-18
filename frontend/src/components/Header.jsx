@@ -1,5 +1,5 @@
-import { specialtyService } from "@/pages/admin/ManageCategories/specialtyService";
-import { useAuthStore } from "@/stores/authStore";
+import { specialtyService } from '@/pages/admin/ManageCategories/specialtyService';
+import { useAuthStore } from '@/stores/authStore';
 import {
   DownOutlined,
   FacebookOutlined,
@@ -9,12 +9,12 @@ import {
   TikTokOutlined,
   UserOutlined,
   YoutubeOutlined,
-} from "@ant-design/icons";
-import { Avatar, Button, Drawer, Dropdown, Input, Menu } from "antd";
-import { useEffect, useState } from "react";
-import { IoSearch } from "react-icons/io5";
-import { SlEarphonesAlt } from "react-icons/sl";
-import { Link, useNavigate } from "react-router-dom";
+} from '@ant-design/icons';
+import { Avatar, Button, Drawer, Dropdown, Input, Menu } from 'antd';
+import { useEffect, useState } from 'react';
+import { IoSearch } from 'react-icons/io5';
+import { SlEarphonesAlt } from 'react-icons/sl';
+import { Link, useNavigate } from 'react-router-dom';
 
 const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -28,8 +28,8 @@ const Header = () => {
   // Hiệu ứng cuộn trang
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 50);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   // Gọi API lấy danh mục dịch vụ khi Header vừa render
@@ -37,12 +37,12 @@ const Header = () => {
     const fetchServices = async () => {
       try {
         const res = await specialtyService.getSpecialties({
-          status: "active",
+          status: 'active',
           limit: 12, // Lấy 12 dịch vụ nổi bật để đưa lên Mega Menu
         });
         setSpecialties(res.specialties || []);
       } catch (error) {
-        console.error("Lỗi tải danh mục dịch vụ Header:", error);
+        console.error('Lỗi tải danh mục dịch vụ Header:', error);
       }
     };
     fetchServices();
@@ -50,19 +50,19 @@ const Header = () => {
 
   const handleLogout = () => {
     logout();
-    navigate("/home");
+    navigate('/home');
   };
 
   const handleMobileMenuClick = (e) => {
     setOpenMobileMenu(false);
-    if (e.key === "logout") {
+    if (e.key === 'logout') {
       handleLogout();
-    } else if (e.key === "login") {
-      navigate("/auth");
-    } else if (e.key === "doctor-register") {
-      navigate("/become-doctor");
-    } else if (e.key.startsWith("service-")) {
-      const serviceId = e.key.replace("service-", "");
+    } else if (e.key === 'login') {
+      navigate('/auth');
+    } else if (e.key === 'doctor-register') {
+      navigate('/become-doctor');
+    } else if (e.key.startsWith('service-')) {
+      const serviceId = e.key.replace('service-', '');
       navigate(`/services/${serviceId}`);
     } else {
       navigate(`/${e.key}`);
@@ -113,7 +113,7 @@ const Header = () => {
                 </div>
                 <div className="text-[11px] text-slate-500 line-clamp-2 leading-snug group-hover:text-blue-600/80">
                   {spec.description ||
-                    "Tư vấn và khám chữa bệnh chuyên sâu bởi đội ngũ bác sĩ hàng đầu."}
+                    'Tư vấn và khám chữa bệnh chuyên sâu bởi đội ngũ bác sĩ hàng đầu.'}
                 </div>
               </div>
             </div>
@@ -127,14 +127,14 @@ const Header = () => {
   // CẤU HÌNH MENU DESKTOP (Sử dụng Mega Menu)
   // =========================================================
   const desktopNavItems = [
-    { label: "Trang chủ", key: "home" },
-    { label: <Link to="/doctors">Bác sỹ</Link>, key: "doctors" },
+    { label: <Link to="/home">Trang Chủ</Link>, key: 'home' },
+    { label: <Link to="/doctors">Bác sỹ</Link>, key: 'doctors' },
     {
       label: (
         // Gắn Dropdown bọc lấy chữ "Dịch vụ"
         <Dropdown
           dropdownRender={() => <ServiceMegaMenu />}
-          trigger={["hover"]}
+          trigger={['hover']}
           placement="bottom"
           arrow={{ pointAtCenter: true }}
         >
@@ -143,75 +143,73 @@ const Header = () => {
           </span>
         </Dropdown>
       ),
-      key: "services",
+      key: 'services',
     },
-    { label: "Tin tức", key: "news" },
-    { label: "Liên hệ", key: "contact" },
+    { label: <Link to="/contact">Liên hệ</Link>, key: 'contact' },
   ];
 
   // =========================================================
   // CẤU HÌNH MENU MOBILE ĐỘNG (Dạng list thả xuống tiêu chuẩn)
   // =========================================================
   const mobileNavItems = [
-    { label: "Trang chủ", key: "home" },
-    { label: "Bác sỹ", key: "doctors" },
+    { label: <Link to="/home">Trang Chủ</Link>, key: 'home' },
+    { label: <Link to="/doctors">Bác sỹ</Link>, key: 'doctors' },
     {
-      label: "Dịch vụ",
-      key: "services",
+      label: 'Dịch vụ',
+      key: 'services',
       children:
         specialties.length > 0
           ? specialties.map((spec) => ({
               label: spec.name,
               key: `service-${spec._id}`,
             }))
-          : [{ label: "Đang tải dữ liệu...", key: "loading", disabled: true }],
+          : [{ label: 'Đang tải dữ liệu...', key: 'loading', disabled: true }],
     },
-    { label: "Tin tức", key: "news" },
-    { label: "Liên hệ", key: "contact" },
-    { type: "divider" },
+    { label: <Link to="/contact">Liên hệ</Link>, key: 'contact' },
+    { type: 'divider' },
     {
-      key: "doctor-register",
-      label: "Đăng ký làm Bác sĩ",
+      key: 'doctor-register',
+      label: 'Đăng ký làm Bác sĩ',
       icon: <MedicineBoxOutlined />,
-      className: "!text-teal-600 !font-bold bg-teal-50/50 rounded-lg mx-2",
+      className: '!text-teal-600 !font-bold bg-teal-50/50 rounded-lg mx-2',
     },
-    { type: "divider" },
+    { type: 'divider' },
     ...(isAuthenticated
       ? [
           {
-            key: "user-info",
-            label: `Xin chào, ${user?.fullName || "Bạn"}`,
+            key: 'user-info',
+            label: `Xin chào, ${user?.fullName || 'Bạn'}`,
             disabled: true,
-            className: "!text-blue-600 !font-bold",
+            className: '!text-blue-600 !font-bold',
           },
           {
-            label: "Đăng xuất",
-            key: "logout",
+            label: 'Đăng xuất',
+            key: 'logout',
             icon: <LogoutOutlined />,
             danger: true,
           },
         ]
       : [
           {
-            label: "Đăng nhập / Đăng ký",
-            key: "login",
+            label: 'Đăng nhập / Đăng ký',
+            key: 'login',
             icon: <UserOutlined />,
-            className: "text-blue-600 font-semibold",
+            className: 'text-blue-600 font-semibold',
           },
         ]),
   ];
 
   const userDropdownItems = [
     {
-      key: "appointments",
-      label: "Lịch sử khám",
+      key: 'appointments',
+      label: 'Lịch sử khám',
       icon: <UserOutlined />,
-      onClick: () => navigate("/appointments"),
+      onClick: () => navigate('/appointments'),
     },
-    { type: "divider" },
+    { type: 'divider' },
     {
-      key: "logout",
-      label: "Đăng xuất",
+      key: 'logout',
+      label: 'Đăng xuất',
       icon: <LogoutOutlined />,
       danger: true,
       onClick: handleLogout,
@@ -219,18 +217,18 @@ const Header = () => {
   ];
 
   const getDisplayName = () => {
-    if (!user) return "Tài khoản";
-    return `${user.lastName || ""} ${user.firstName || ""}`.trim();
+    if (!user) return 'Tài khoản';
+    return `${user.lastName || ''} ${user.firstName || ''}`.trim();
   };
 
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 w-full z-50 bg-white transition-all duration-300 ${isScrolled ? "shadow-md" : "shadow-sm"}`}
+        className={`fixed top-0 left-0 right-0 w-full z-50 bg-white transition-all duration-300 ${isScrolled ? 'shadow-md' : 'shadow-sm'}`}
       >
         {/* TOPBAR */}
         <div
-          className={`w-full border-b border-gray-100 transition-all duration-500 ease-in-out overflow-hidden ${isScrolled ? "max-h-0 opacity-0" : "max-h-20 opacity-100"}`}
+          className={`w-full border-b border-gray-100 transition-all duration-500 ease-in-out overflow-hidden ${isScrolled ? 'max-h-0 opacity-0' : 'max-h-20 opacity-100'}`}
         >
           <div className="max-w-7xl mx-auto w-full px-4 lg:px-8 h-12 flex items-center justify-between">
             <div className="hidden md:flex items-center justify-center font-semibold text-gray-500 text-sm">
@@ -262,7 +260,7 @@ const Header = () => {
                 type="primary"
                 className="bg-teal-600! hover:bg-teal-700! border-none! font-semibold! hidden! md:flex! items-center! shadow-sm! shadow-teal-600/20! transition-all!"
                 icon={<MedicineBoxOutlined />}
-                onClick={() => navigate("/become-doctor")}
+                onClick={() => navigate('/become-doctor')}
               >
                 Trở thành Bác sĩ
               </Button>
@@ -288,7 +286,7 @@ const Header = () => {
                   ghost
                   className="font-semibold! h-9! px-4!  hidden! sm:flex! items-center!"
                   icon={<UserOutlined />}
-                  onClick={() => navigate("/auth")}
+                  onClick={() => navigate('/auth')}
                 >
                   Tài khoản
                 </Button>
@@ -303,7 +301,7 @@ const Header = () => {
             <div className="flex items-center gap-6 lg:gap-10">
               <div
                 className="flex items-center gap-2 text-2xl lg:text-3xl font-bold cursor-pointer"
-                onClick={() => navigate("/")}
+                onClick={() => navigate('/')}
               >
                 <div className="flex items-center justify-center w-8 h-8 lg:w-10 lg:h-10 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/20">
                   D
@@ -322,9 +320,9 @@ const Header = () => {
                     const keyword = e.target.value.trim();
                     if (keyword) {
                       navigate(
-                        `/doctors?search=${encodeURIComponent(keyword)}`,
+                        `/doctors?search=${encodeURIComponent(keyword)}`
                       );
-                      e.target.value = ""; // optional: clear after search
+                      e.target.value = ''; // optional: clear after search
                     }
                   }}
                 />

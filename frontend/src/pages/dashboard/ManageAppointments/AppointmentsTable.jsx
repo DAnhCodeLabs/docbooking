@@ -43,11 +43,11 @@ const AppointmentsTable = ({
           />
           <div className="flex flex-col">
             <span className="font-semibold text-gray-800 leading-tight">
-              {record.patientProfile.fullName}
+              {record.patientId.fullName}
             </span>
             <span className="text-xs text-gray-500">
-              {record.patientProfile.phone} •{" "}
-              {record.patientProfile.cccd || "N/A"}
+              {record.patientId.phone || "N/A"} •{" "}
+              {record.patientId.cccd || "N/A"}
             </span>
           </div>
         </div>

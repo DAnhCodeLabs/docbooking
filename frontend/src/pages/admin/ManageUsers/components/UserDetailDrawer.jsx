@@ -321,20 +321,20 @@ const UserDetailDrawer = ({ visible, user, loading, onClose }) => {
                 {user.role === "patient" && (
                   <Tabs.TabPane tab="Hồ sơ Bệnh nhân" key="2">
                     <div className="py-6">
-                      {user.patientProfile ? (
+                      {user.medicalRecord ? (
                         <div className="space-y-6">
                           {/* Render dữ liệu Patient nếu có */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <InfoItem
                               icon={<MedicineBoxOutlined />}
                               label="Nhóm máu"
-                              value={user.patientProfile.bloodGroup}
+                              value={user.medicalRecord.bloodGroup}
                               valueColor="text-rose-600"
                             />
                             <InfoItem
                               icon={<WarningOutlined />}
                               label="Dị ứng"
-                              value={user.patientProfile.allergies?.join(", ")}
+                              value={user.medicalRecord.allergies?.join(", ")}
                             />
                           </div>
                         </div>

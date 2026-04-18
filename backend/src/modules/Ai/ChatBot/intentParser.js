@@ -134,10 +134,11 @@ const extractRelativeTime = (lowerMsg) => {
  * @returns {string|null}
  */
 const extractDoctorName = (message) => {
-  const regex = /(bác sĩ|bs|doctor)\s+([A-ZÀ-Ỹa-zà-ỹ\s]+)/i;
+  const regex =
+    /(?:bác sĩ|bs|doctor)\s+((?!nào|giỏi|tốt|đâu|ở)[A-ZÀ-Ỹa-zà-ỹ\s]+)/i;
   const match = message.match(regex);
-  if (match && match[2]) {
-    return match[2].trim();
+  if (match && match[1]) {
+    return match[1].trim();
   }
   return null;
 };
@@ -152,5 +153,5 @@ const extractStatus = (lowerMsg) => {
   if (/đã hủy|cancelled/.test(lowerMsg)) return 'cancelled';
   if (/chờ thanh toán|pending/.test(lowerMsg)) return 'pending_payment';
   if (/đã hoàn thành|hoàn thành|completed/.test(lowerMsg)) return 'completed';
-  return null;  
+  return null;
 };

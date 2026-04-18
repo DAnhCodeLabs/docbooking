@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 
 export const generatePrescriptionHTML = (consultation, appointment) => {
   const doctor = appointment.doctor;
-  const patient = appointment.patientProfile;
+  const patient = appointment.patientId;
   const slot = appointment.slot;
   const schedule = slot?.scheduleId || {};
   const consultationDate = appointment.completedAt || new Date();

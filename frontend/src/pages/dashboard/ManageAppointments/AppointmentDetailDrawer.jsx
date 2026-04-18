@@ -45,7 +45,7 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
               Bệnh nhân
             </div>
             <Title level={4} className="m-0! text-gray-800!">
-              {appointment.patientProfile.fullName}
+              {appointment.patientId.fullName}
             </Title>
           </div>
         </div>
@@ -77,7 +77,7 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
             <div>
               <span className="text-xs text-gray-500 block">Số điện thoại</span>
               <span className="font-medium text-gray-800">
-                {appointment.patientProfile.phone}
+                {appointment.patientId.phone || "N/A"}
               </span>
             </div>
             <div>
@@ -85,7 +85,7 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
                 CCCD / Định danh
               </span>
               <span className="font-medium text-gray-800">
-                {appointment.patientProfile.cccd || "Chưa cập nhật"}
+                {appointment.patientId.cccd || "Chưa cập nhật"}
               </span>
             </div>
           </div>

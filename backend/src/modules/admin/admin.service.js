@@ -28,10 +28,6 @@ export const getUsers = async (query) => {
   // Sửa: populate sâu cho doctorProfile
   const users = await features.query
     .populate({
-      path: "patientProfile",
-      select: "-__v",
-    })
-    .populate({
       path: "doctorProfile",
       select: "-__v",
       populate: [
@@ -46,7 +42,6 @@ export const getUsers = async (query) => {
 
 export const getUserById = async (userId) => {
   const user = await User.findById(userId)
-    .populate("patientProfile")
     .populate({
       path: "doctorProfile",
       populate: [

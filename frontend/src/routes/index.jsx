@@ -18,6 +18,7 @@ import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AuthGuard from "./AuthGuard";
 import PrivateRoute from "./PrivateRoute";
 import DoctorDashboardPage from "@/pages/dashboard/ManageDashboard/DoctorDashboardPage";
+import ContactPage from "@/pages/patient/Contact";
 
 // Layouts
 const DashboardLayout = lazy(() => import("@/layouts/DashboardLayout"));
@@ -103,6 +104,10 @@ export const router = createBrowserRouter([
       {
         path: "doctors",
         element: <DoctorsPage />,
+      },
+      {
+        path: "contact",
+        element: <ContactPage />,
       },
       {
         path: "booking/:doctorId", // THÊM ROUTE ĐẶT LỊCH

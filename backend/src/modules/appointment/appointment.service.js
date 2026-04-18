@@ -1,30 +1,30 @@
-import dayjs from "dayjs";
-import utc from "dayjs/plugin/utc.js";
-import { StatusCodes } from "http-status-codes";
-import mongoose from "mongoose";
-import Appointment from "../../models/Appointment.js";
-import AuditLog from "../../models/AuditLog.js";
-import ClinicLead from "../../models/ClinicLead.js";
-import DoctorProfile from "../../models/DoctorProfile.js";
-import MedicalConsultation from "../../models/MedicalConsultation.js";
-import MedicalRecord from "../../models/MedicalRecord.js";
-import Payment from "../../models/Payment.js";
-import RevenueSplit from "../../models/RevenueSplit.js";
-import Slot from "../../models/Slot.js";
-import User from "../../models/User.js";
-import ApiError from "../../utils/ApiError.js";
-import { getTodayUTC, normalizeUTCDate } from "../../utils/date.js";
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import { StatusCodes } from 'http-status-codes';
+import mongoose from 'mongoose';
+import Appointment from '../../models/Appointment.js';
+import AuditLog from '../../models/AuditLog.js';
+import ClinicLead from '../../models/ClinicLead.js';
+import DoctorProfile from '../../models/DoctorProfile.js';
+import MedicalConsultation from '../../models/MedicalConsultation.js';
+import MedicalRecord from '../../models/MedicalRecord.js';
+import Payment from '../../models/Payment.js';
+import RevenueSplit from '../../models/RevenueSplit.js';
+import Slot from '../../models/Slot.js';
+import User from '../../models/User.js';
+import ApiError from '../../utils/ApiError.js';
+import { getTodayUTC, normalizeUTCDate } from '../../utils/date.js';
 import {
   sendAppointmentConfirmation,
   sendPrescriptionEmail,
   sendRefundNotification,
-} from "../../utils/email.js";
-import logger from "../../utils/logger.js";
-import { generateQRCode } from "../../utils/qr.js";
-import { generatePaymentUrl } from "../../utils/vnpay.js";
-import * as clinicLeadService from "../clinicLead/clinicLead.service.js";
-import * as doctorService from "../doctor/doctor.service.js";
-import { processRefund } from "../payment/payment.service.js";
+} from '../../utils/email.js';
+import logger from '../../utils/logger.js';
+import { generateQRCode } from '../../utils/qr.js';
+import { generatePaymentUrl } from '../../utils/vnpay.js';
+import * as clinicLeadService from '../clinicLead/clinicLead.service.js';
+import * as doctorService from '../doctor/doctor.service.js';
+import { processRefund } from '../payment/payment.service.js';
 
 dayjs.extend(utc);
 
@@ -32,13 +32,13 @@ const atomicUpdateSlot = async (
   slotId,
   currentStatus,
   newStatus,
-  additionalUpdate = {},
+  additionalUpdate = {}
 ) => {
   const update = { $set: { status: newStatus, ...additionalUpdate } };
   const slot = await Slot.findOneAndUpdate(
     { _id: slotId, status: currentStatus },
     update,
-    { returnDocument: "after" }, // sửa từ { new: true } thành returnDocument
+    { returnDocument: 'after' } // sửa từ { new: true } thành returnDocument
   );
   return slot;
 };
@@ -47,7 +47,7 @@ export const createAppointment = async (
   userId,
   data,
   origin,
-  clientIp = "127.0.0.1",
+  clientIp = '127.0.0.1'
 ) => {
   const { slotId, medicalRecordId, note, symptoms, paymentMethod } = data;
 
@@ -59,41 +59,41 @@ export const createAppointment = async (
   if (!medicalRecord) {
     throw new ApiError(
       StatusCodes.FORBIDDEN,
-      "Bạn không có quyền sử dụng hồ sơ này.",
+      'Bạn không có quyền sử dụng hồ sơ này.'
     );
   }
 
   // 2. Atomic lock slot (tạm giữ)
-  let slot = await atomicUpdateSlot(slotId, "available", "pending_payment", {
+  let slot = await atomicUpdateSlot(slotId, 'available', 'pending_payment', {
     appointmentId: null,
   });
   if (!slot) {
     const existingSlot = await Slot.findById(slotId);
     if (!existingSlot)
-      throw new ApiError(StatusCodes.NOT_FOUND, "Slot không tồn tại.");
-    if (existingSlot.status !== "available")
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Slot không tồn tại.');
+    if (existingSlot.status !== 'available')
       throw new ApiError(
         StatusCodes.CONFLICT,
-        "Slot này đã được đặt hoặc bị khóa.",
+        'Slot này đã được đặt hoặc bị khóa.'
       );
     if (existingSlot.leaveId)
       throw new ApiError(
         StatusCodes.CONFLICT,
-        "Slot này đang bị khóa do bác sĩ nghỉ.",
+        'Slot này đang bị khóa do bác sĩ nghỉ.'
       );
     throw new ApiError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Không thể đặt slot, vui lòng thử lại.",
+      'Không thể đặt slot, vui lòng thử lại.'
     );
   }
 
-  const fullSlot = await Slot.findById(slot._id).populate("scheduleId");
+  const fullSlot = await Slot.findById(slot._id).populate('scheduleId');
   if (!fullSlot) {
     // Rollback
-    await atomicUpdateSlot(slotId, "pending_payment", "available", {
+    await atomicUpdateSlot(slotId, 'pending_payment', 'available', {
       appointmentId: null,
     });
-    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "Slot không hợp lệ.");
+    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Slot không hợp lệ.');
   }
 
   const doctorId = fullSlot.scheduleId.doctor;
@@ -102,12 +102,12 @@ export const createAppointment = async (
   const slotDate = normalizeUTCDate(fullSlot.scheduleId.date);
   const today = getTodayUTC();
   if (slotDate < today) {
-    await atomicUpdateSlot(slotId, "pending_payment", "available", {
+    await atomicUpdateSlot(slotId, 'pending_payment', 'available', {
       appointmentId: null,
     });
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      "Không thể đặt lịch cho ngày đã qua.",
+      'Không thể đặt lịch cho ngày đã qua.'
     );
   }
 
@@ -119,54 +119,54 @@ export const createAppointment = async (
   try {
     // Tạo appointment (chưa có QR)
     appointment = await Appointment.create({
-      patientProfile: medicalRecordId,
+      patientId: userId,
       bookingUser: userId,
       doctor: doctorId,
       slot: slotId,
       note,
       symptoms,
-      qrCode: "pending", // sẽ tạo sau khi thanh toán thành công
+      qrCode: 'pending', // sẽ tạo sau khi thanh toán thành công
       paymentMethod,
-      paymentStatus: "pending",
+      paymentStatus: 'pending',
       paymentExpiryAt:
-        paymentMethod === "online"
+        paymentMethod === 'online'
           ? new Date(Date.now() + 15 * 60 * 1000)
           : null,
-      status: paymentMethod === "online" ? "pending_payment" : "confirmed",
+      status: paymentMethod === 'online' ? 'pending_payment' : 'confirmed',
     });
 
     // Cập nhật slot với appointmentId
     const updatedSlot = await atomicUpdateSlot(
       slotId,
-      "pending_payment",
-      "pending_payment",
+      'pending_payment',
+      'pending_payment',
       {
         appointmentId: appointment._id,
-      },
+      }
     );
     if (!updatedSlot) {
       // race condition: slot đã bị thay đổi
       await Appointment.findByIdAndDelete(appointment._id);
       throw new ApiError(
         StatusCodes.CONFLICT,
-        "Slot đã bị thay đổi, vui lòng thử lại.",
+        'Slot đã bị thay đổi, vui lòng thử lại.'
       );
     }
 
-    if (paymentMethod === "online") {
+    if (paymentMethod === 'online') {
       // Tạo payment record
-      const DoctorProfile = await import("../../models/DoctorProfile.js").then(
-        (m) => m.default,
+      const DoctorProfile = await import('../../models/DoctorProfile.js').then(
+        (m) => m.default
       );
       const doctorProfile = await DoctorProfile.findOne({
         user: doctorId,
-      }).select("consultationFee");
+      }).select('consultationFee');
       const fee = doctorProfile?.consultationFee || 100000; // fallback nếu không có
       paymentRecord = await Payment.create({
         appointmentId: appointment._id,
         orderId: appointment._id.toString(),
         amount: fee,
-        status: "pending",
+        status: 'pending',
       });
 
       // Tạo URL thanh toán
@@ -180,27 +180,27 @@ export const createAppointment = async (
         paymentRecord.amount,
         returnUrl,
         ipnUrl,
-        clientIp,
+        clientIp
       );
     } else {
       // Offline: tạo QR và gửi email ngay
-      const baseUrl = origin || "http://localhost:3000";
+      const baseUrl = origin || 'http://localhost:3000';
       const qrData = `${baseUrl}/checkin/${appointment._id}`;
       const qrCode = await generateQRCode(qrData);
       appointment.qrCode = qrCode;
       await appointment.save();
 
       // Gửi email
-      const doctor = await User.findById(doctorId).select("fullName");
+      const doctor = await User.findById(doctorId).select('fullName');
       const slotTime = `${fullSlot.startTime} - ${fullSlot.endTime}`;
       const appointmentData = {
         patientName: medicalRecord.fullName,
-        doctorName: doctor?.fullName || "Bác sĩ",
+        doctorName: doctor?.fullName || 'Bác sĩ',
         date: fullSlot.scheduleId.date,
         time: slotTime,
         qrCodeUrl: qrCode,
       };
-      const user = await User.findById(userId).select("email");
+      const user = await User.findById(userId).select('email');
       if (user?.email) {
         await sendAppointmentConfirmation(user.email, appointmentData);
       }
@@ -209,17 +209,17 @@ export const createAppointment = async (
     // Rollback: xóa appointment, giải phóng slot, xóa payment
     if (appointment) await Appointment.findByIdAndDelete(appointment._id);
     if (paymentRecord) await Payment.findByIdAndDelete(paymentRecord._id);
-    await atomicUpdateSlot(slotId, "pending_payment", "available", {
+    await atomicUpdateSlot(slotId, 'pending_payment', 'available', {
       appointmentId: null,
     });
     logger.error(`Lỗi tạo appointment: ${error.message}`);
     throw new ApiError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Đặt lịch thất bại. Vui lòng thử lại.",
+      'Đặt lịch thất bại. Vui lòng thử lại.'
     );
   }
 
-  if (paymentMethod === "online") {
+  if (paymentMethod === 'online') {
     return { paymentUrl, appointmentId: appointment._id };
   }
   return appointment;
@@ -230,11 +230,11 @@ export const createAppointment = async (
  */
 export const getMyAppointments = async (userId, query) => {
   // ========== FIX: Đảm bảo dateFrom/dateTo là Date object ==========
-  if (query.dateFrom && typeof query.dateFrom === "string") {
-    query.dateFrom = dayjs.utc(query.dateFrom).startOf("day").toDate();
+  if (query.dateFrom && typeof query.dateFrom === 'string') {
+    query.dateFrom = dayjs.utc(query.dateFrom).startOf('day').toDate();
   }
-  if (query.dateTo && typeof query.dateTo === "string") {
-    query.dateTo = dayjs.utc(query.dateTo).endOf("day").toDate();
+  if (query.dateTo && typeof query.dateTo === 'string') {
+    query.dateTo = dayjs.utc(query.dateTo).endOf('day').toDate();
   }
   // ================================================================
 
@@ -247,7 +247,7 @@ export const getMyAppointments = async (userId, query) => {
   // 1. Match bookingUser
   const matchStage = { bookingUser: new mongoose.Types.ObjectId(userId) };
   if (query.status) {
-    const statusArray = query.status.split(",").map((s) => s.trim());
+    const statusArray = query.status.split(',').map((s) => s.trim());
     if (statusArray.length === 1) {
       matchStage.status = statusArray[0];
     } else {
@@ -259,27 +259,27 @@ export const getMyAppointments = async (userId, query) => {
   // 2. Lookup slot
   pipeline.push({
     $lookup: {
-      from: "slots",
-      localField: "slot",
-      foreignField: "_id",
-      as: "slotInfo",
+      from: 'slots',
+      localField: 'slot',
+      foreignField: '_id',
+      as: 'slotInfo',
     },
   });
   pipeline.push({
-    $unwind: { path: "$slotInfo", preserveNullAndEmptyArrays: true },
+    $unwind: { path: '$slotInfo', preserveNullAndEmptyArrays: true },
   });
 
   // 3. Lookup schedule
   pipeline.push({
     $lookup: {
-      from: "schedules",
-      localField: "slotInfo.scheduleId",
-      foreignField: "_id",
-      as: "scheduleInfo",
+      from: 'schedules',
+      localField: 'slotInfo.scheduleId',
+      foreignField: '_id',
+      as: 'scheduleInfo',
     },
   });
   pipeline.push({
-    $unwind: { path: "$scheduleInfo", preserveNullAndEmptyArrays: true },
+    $unwind: { path: '$scheduleInfo', preserveNullAndEmptyArrays: true },
   });
 
   // 4. Lọc theo ngày (nếu có)
@@ -291,8 +291,8 @@ export const getMyAppointments = async (userId, query) => {
     pipeline.push({
       $match: {
         $or: [
-          { "scheduleInfo.date": dateFilter },
-          { "scheduleInfo.date": { $exists: false } }, // Giữ record không có schedule (phòng dữ liệu lỗi)
+          { 'scheduleInfo.date': dateFilter },
+          { 'scheduleInfo.date': { $exists: false } }, // Giữ record không có schedule (phòng dữ liệu lỗi)
         ],
       },
     });
@@ -301,27 +301,27 @@ export const getMyAppointments = async (userId, query) => {
   // 5. Lookup doctor
   pipeline.push({
     $lookup: {
-      from: "users",
-      localField: "doctor",
-      foreignField: "_id",
-      as: "doctorInfo",
+      from: 'users',
+      localField: 'doctor',
+      foreignField: '_id',
+      as: 'doctorInfo',
     },
   });
   pipeline.push({
-    $unwind: { path: "$doctorInfo", preserveNullAndEmptyArrays: true },
+    $unwind: { path: '$doctorInfo', preserveNullAndEmptyArrays: true },
   });
 
   // 6. Lookup patient profile (MedicalRecord)
   pipeline.push({
     $lookup: {
-      from: "medicalrecords",
-      localField: "patientProfile",
-      foreignField: "_id",
-      as: "patientInfo",
+      from: 'medicalrecords',
+      localField: 'patientId',
+      foreignField: '_id',
+      as: 'patientInfo',
     },
   });
   pipeline.push({
-    $unwind: { path: "$patientInfo", preserveNullAndEmptyArrays: true },
+    $unwind: { path: '$patientInfo', preserveNullAndEmptyArrays: true },
   });
 
   // 7. Sort
@@ -330,7 +330,7 @@ export const getMyAppointments = async (userId, query) => {
   // 8. Facet phân trang
   pipeline.push({
     $facet: {
-      metadata: [{ $count: "total" }],
+      metadata: [{ $count: 'total' }],
       data: [{ $skip: skip }, { $limit: limit }],
     },
   });
@@ -343,21 +343,21 @@ export const getMyAppointments = async (userId, query) => {
   if (appointments.length > 0) {
     const doctorIds = [
       ...new Set(
-        appointments.map((app) => app.doctorInfo?._id).filter(Boolean),
+        appointments.map((app) => app.doctorInfo?._id).filter(Boolean)
       ),
     ];
     if (doctorIds.length > 0) {
-      const DoctorProfile = await import("../../models/DoctorProfile.js").then(
-        (m) => m.default,
+      const DoctorProfile = await import('../../models/DoctorProfile.js').then(
+        (m) => m.default
       );
       const doctorProfiles = await DoctorProfile.find({
         user: { $in: doctorIds },
       })
-        .populate("specialty", "name")
-        .populate("clinicId", "clinicName")
+        .populate('specialty', 'name')
+        .populate('clinicId', 'clinicName')
         .lean();
       const mapDoctorProfile = new Map(
-        doctorProfiles.map((dp) => [dp.user.toString(), dp]),
+        doctorProfiles.map((dp) => [dp.user.toString(), dp])
       );
 
       appointments = appointments.map((app) => {
@@ -385,7 +385,7 @@ export const getMyAppointments = async (userId, query) => {
     ...app,
     slot: app.slotInfo,
     doctor: app.doctorInfo,
-    patientProfile: app.patientInfo,
+    patientId: app.patientInfo,
   }));
 
   return {
@@ -403,7 +403,7 @@ export const cancelAppointment = async (
   userId,
   reason,
   ipAddress,
-  userAgent,
+  userAgent
 ) => {
   // 1. Tìm appointment và slot, populate
   const appointment = await Appointment.findOne({
@@ -411,40 +411,39 @@ export const cancelAppointment = async (
     $or: [{ bookingUser: userId }, { doctor: userId }],
   })
     .populate({
-      path: "slot",
+      path: 'slot',
       populate: {
-        path: "scheduleId",
-        model: "Schedule",
+        path: 'scheduleId',
+        model: 'Schedule',
       },
     })
-    .populate("doctor")
-    .populate("patientProfile");
+    .populate('doctor');
 
   if (!appointment) {
     throw new ApiError(
       StatusCodes.NOT_FOUND,
-      "Không tìm thấy cuộc hẹn hoặc bạn không có quyền hủy.",
+      'Không tìm thấy cuộc hẹn hoặc bạn không có quyền hủy.'
     );
   }
 
   // 2. Kiểm tra trạng thái (chỉ cho phép hủy khi đang confirmed)
-  if (appointment.status !== "confirmed") {
+  if (appointment.status !== 'confirmed') {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      `Cuộc hẹn đang ở trạng thái ${appointment.status}, không thể hủy.`,
+      `Cuộc hẹn đang ở trạng thái ${appointment.status}, không thể hủy.`
     );
   }
 
   // 3. Kiểm tra thời gian slot
   const slot = appointment.slot;
   const slotStart = new Date(slot.scheduleId.date);
-  const [hour, minute] = slot.startTime.split(":").map(Number);
+  const [hour, minute] = slot.startTime.split(':').map(Number);
   slotStart.setUTCHours(hour, minute, 0, 0);
   const now = new Date();
   if (now >= slotStart) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      "Không thể hủy lịch đã qua giờ khám.",
+      'Không thể hủy lịch đã qua giờ khám.'
     );
   }
 
@@ -454,14 +453,14 @@ export const cancelAppointment = async (
   let clinicId = null;
 
   if (
-    appointment.paymentMethod === "online" &&
-    appointment.paymentStatus === "paid"
+    appointment.paymentMethod === 'online' &&
+    appointment.paymentStatus === 'paid'
   ) {
     const payment = await Payment.findOne({ appointmentId: appointment._id });
     if (!payment) {
       throw new ApiError(
         StatusCodes.INTERNAL_SERVER_ERROR,
-        "Không tìm thấy thông tin thanh toán.",
+        'Không tìm thấy thông tin thanh toán.'
       );
     }
 
@@ -482,26 +481,25 @@ export const cancelAppointment = async (
       refundAmount = 0;
       platformKept = paidAmount;
     }
-
     if (refundAmount > 0) {
       try {
         await processRefund(
           payment._id,
           refundAmount,
-          reason || "Khách hàng hủy lịch",
+          reason || 'Khách hàng hủy lịch'
         );
       } catch (refundError) {
         throw new ApiError(
           StatusCodes.INTERNAL_SERVER_ERROR,
-          refundError.message || "Không thể hoàn tiền, vui lòng thử lại sau.",
+          refundError.message || 'Không thể hoàn tiền, vui lòng thử lại sau.'
         );
       }
+    } else if (refundAmount === 0) {
+      // ✅ Nếu không hoàn tiền, chỉ update refundStatus
+      payment.refundStatus = 'none';
+      payment.refundAmount = 0;
+      await payment.save();
     }
-
-    // Cập nhật payment refund status
-    payment.refundAmount = refundAmount;
-    payment.refundStatus = refundAmount > 0 ? "completed" : "none";
-    await payment.save();
 
     // Lấy clinicId từ doctorProfile để tạo revenue split nếu platform giữ tiền
     if (platformKept > 0) {
@@ -514,7 +512,7 @@ export const cancelAppointment = async (
         } else if (doctorProfile.customClinicName) {
           const clinic = await ClinicLead.findOne({
             clinicName: doctorProfile.customClinicName,
-            status: "resolved",
+            status: 'resolved',
           });
           if (clinic) clinicId = clinic._id;
         }
@@ -526,21 +524,21 @@ export const cancelAppointment = async (
   const slotUpdateResult = await Slot.updateOne(
     {
       _id: slot._id,
-      status: "booked",
+      status: 'booked',
       appointmentId: appointment._id,
     },
-    { status: "available", appointmentId: null },
+    { status: 'available', appointmentId: null }
   );
   if (slotUpdateResult.modifiedCount === 0) {
     throw new ApiError(
       StatusCodes.CONFLICT,
-      "Slot đã bị thay đổi, vui lòng thử lại.",
+      'Slot đã bị thay đổi, vui lòng thử lại.'
     );
   }
 
   // 6. Cập nhật appointment
-  appointment.status = "cancelled";
-  appointment.cancellationReason = reason || "";
+  appointment.status = 'cancelled';
+  appointment.cancellationReason = reason || '';
   appointment.refundAmount = refundAmount;
   await appointment.save();
 
@@ -552,14 +550,14 @@ export const cancelAppointment = async (
         clinicId,
         platformAmount: platformKept,
         clinicAmount: 0,
-        method: "online",
-        status: "cancelled_refund",
+        method: 'online',
+        status: 'cancelled_refund',
         note: `Hủy lịch, giữ ${platformKept} cho platform`,
         calculatedAt: new Date(),
       });
     } catch (splitError) {
       logger.error(
-        `Lỗi tạo revenue split khi hủy appointment ${appointment._id}: ${splitError.message}`,
+        `Lỗi tạo revenue split khi hủy appointment ${appointment._id}: ${splitError.message}`
       );
       // Không throw lỗi để không ảnh hưởng đến việc hủy lịch
     }
@@ -568,8 +566,8 @@ export const cancelAppointment = async (
   // 8. Audit log
   await AuditLog.create({
     userId,
-    action: "CANCEL_APPOINTMENT",
-    status: "SUCCESS",
+    action: 'CANCEL_APPOINTMENT',
+    status: 'SUCCESS',
     ipAddress,
     userAgent,
     details: {
@@ -580,8 +578,8 @@ export const cancelAppointment = async (
       cancelledBy: userId,
       role:
         appointment.bookingUser.toString() === userId.toString()
-          ? "patient"
-          : "doctor",
+          ? 'patient'
+          : 'doctor',
     },
   });
 
@@ -589,8 +587,8 @@ export const cancelAppointment = async (
   if (refundAmount > 0) {
     await AuditLog.create({
       userId,
-      action: "REFUND_PROCESSED",
-      status: "SUCCESS",
+      action: 'REFUND_PROCESSED',
+      status: 'SUCCESS',
       ipAddress,
       userAgent,
       details: {
@@ -603,20 +601,20 @@ export const cancelAppointment = async (
   }
 
   // 10. Gửi email thông báo
-  const user = await User.findById(userId).select("email fullName");
+  const user = await User.findById(userId).select('email fullName');
   if (user?.email) {
     await sendRefundNotification(user.email, {
-      patientName: appointment.patientProfile.fullName,
+      patientName: appointment.patientId.fullName,
       doctorName: appointment.doctor.fullName,
       date: slot.scheduleId.date,
       time: `${slot.startTime} - ${slot.endTime}`,
       refundAmount,
-      reason: reason || "Không có lý do",
+      reason: reason || 'Không có lý do',
     });
   }
 
   return {
-    message: `Hủy lịch thành công${refundAmount > 0 ? `, số tiền hoàn lại: ${refundAmount.toLocaleString()}đ` : ""}${platformKept > 0 ? `, nền tảng giữ: ${platformKept.toLocaleString()}đ` : ""}.`,
+    message: `Hủy lịch thành công${refundAmount > 0 ? `, số tiền hoàn lại: ${refundAmount.toLocaleString()}đ` : ''}${platformKept > 0 ? `, nền tảng giữ: ${platformKept.toLocaleString()}đ` : ''}.`,
   };
 };
 /**
@@ -624,50 +622,50 @@ export const cancelAppointment = async (
  */
 export const checkinAppointment = async (appointmentId, user) => {
   const appointment = await Appointment.findById(appointmentId)
-    .populate("patientProfile", "fullName phone cccd")
-    .populate("doctor", "fullName")
+    .populate('patientId', 'fullName phone cccd')
+    .populate('doctor', 'fullName')
     .populate({
-      path: "slot",
-      populate: { path: "scheduleId", select: "date" },
+      path: 'slot',
+      populate: { path: 'scheduleId', select: 'date' },
     });
 
   if (!appointment) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy cuộc hẹn.");
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy cuộc hẹn.');
   }
 
   // Chỉ cho phép clinic_admin
-  if (user.role !== "clinic_admin") {
+  if (user.role !== 'clinic_admin') {
     throw new ApiError(
       StatusCodes.FORBIDDEN,
-      "Chỉ nhân viên bệnh viện mới được phép check‑in.",
+      'Chỉ nhân viên bệnh viện mới được phép check‑in.'
     );
   }
 
   // Kiểm tra bác sĩ thuộc phòng khám của clinic_admin
-  const ClinicLead = await import("../../models/ClinicLead.js").then(
-    (m) => m.default,
+  const ClinicLead = await import('../../models/ClinicLead.js').then(
+    (m) => m.default
   );
   const clinic = await ClinicLead.findOne({
     user: user._id,
-    status: "resolved",
+    status: 'resolved',
   });
   if (!clinic) {
     throw new ApiError(
       StatusCodes.FORBIDDEN,
-      "Tài khoản không liên kết với phòng khám nào.",
+      'Tài khoản không liên kết với phòng khám nào.'
     );
   }
 
-  const DoctorProfile = await import("../../models/DoctorProfile.js").then(
-    (m) => m.default,
+  const DoctorProfile = await import('../../models/DoctorProfile.js').then(
+    (m) => m.default
   );
   const doctorProfile = await DoctorProfile.findOne({
     user: appointment.doctor._id,
-  }).populate("clinicId", "clinicName");
+  }).populate('clinicId', 'clinicName');
   if (!doctorProfile) {
     throw new ApiError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Không tìm thấy thông tin bác sĩ.",
+      'Không tìm thấy thông tin bác sĩ.'
     );
   }
 
@@ -681,21 +679,21 @@ export const checkinAppointment = async (appointmentId, user) => {
   if (!isOwnDoctor) {
     throw new ApiError(
       StatusCodes.FORBIDDEN,
-      "Bạn không có quyền check‑in cho bác sĩ không thuộc phòng khám của mình.",
+      'Bạn không có quyền check‑in cho bác sĩ không thuộc phòng khám của mình.'
     );
   }
 
   // Kiểm tra trạng thái và thời gian check‑in (giữ nguyên phần còn lại)
-  if (appointment.status !== "confirmed") {
+  if (appointment.status !== 'confirmed') {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      `Cuộc hẹn đang ở trạng thái ${appointment.status}, không thể check‑in.`,
+      `Cuộc hẹn đang ở trạng thái ${appointment.status}, không thể check‑in.`
     );
   }
 
   const slot = appointment.slot;
   const slotDate = new Date(slot.scheduleId.date);
-  const [hour, minute] = slot.startTime.split(":").map(Number);
+  const [hour, minute] = slot.startTime.split(':').map(Number);
   slotDate.setUTCHours(hour, minute, 0, 0);
 
   const now = new Date();
@@ -709,19 +707,19 @@ export const checkinAppointment = async (appointmentId, user) => {
   //   );
   // }
 
-  appointment.status = "checked_in";
+  appointment.status = 'checked_in';
   appointment.checkinTime = now;
-  appointment.paymentStatus = "paid";
+  appointment.paymentStatus = 'paid';
   await appointment.save();
-  console.log("[Checkin] Data before return:", {
+  console.log('[Checkin] Data before return:', {
     patientName: appointment.patientProfile?.fullName,
     doctorName: appointment.doctor?.fullName,
     date: slot.scheduleId?.date,
     time: `${slot.startTime} - ${slot.endTime}`,
-    clinicName: "Phòng khám DocGo",
+    clinicName: 'Phòng khám DocGo',
     status: appointment.status,
   });
-  let clinicName = "Phòng khám DocGo"; // fallback
+  let clinicName = 'Phòng khám DocGo'; // fallback
   if (doctorProfile) {
     if (doctorProfile.clinicId) {
       clinicName = doctorProfile.clinicId.clinicName;
@@ -730,9 +728,9 @@ export const checkinAppointment = async (appointmentId, user) => {
     }
   }
   return {
-    message: "Check‑in thành công. Vui lòng vào phòng khám theo hướng dẫn.",
+    message: 'Check‑in thành công. Vui lòng vào phòng khám theo hướng dẫn.',
     data: {
-      patientName: appointment.patientProfile.fullName,
+      patientName: appointment.patientId.fullName,
       doctorName: appointment.doctor.fullName,
       date: slot.scheduleId.date,
       time: `${slot.startTime} - ${slot.endTime}`,
@@ -743,11 +741,11 @@ export const checkinAppointment = async (appointmentId, user) => {
 };
 
 export const getAppointments = async (user, query) => {
-  if (query.dateFrom && typeof query.dateFrom === "string") {
-    query.dateFrom = dayjs.utc(query.dateFrom).startOf("day").toDate();
+  if (query.dateFrom && typeof query.dateFrom === 'string') {
+    query.dateFrom = dayjs.utc(query.dateFrom).startOf('day').toDate();
   }
-  if (query.dateTo && typeof query.dateTo === "string") {
-    query.dateTo = dayjs.utc(query.dateTo).endOf("day").toDate();
+  if (query.dateTo && typeof query.dateTo === 'string') {
+    query.dateTo = dayjs.utc(query.dateTo).endOf('day').toDate();
   }
   const { role, _id: userId } = user;
   const page = parseInt(query.page, 10) || 1;
@@ -758,41 +756,41 @@ export const getAppointments = async (user, query) => {
 
   // Xác định điều kiện lọc theo role
   let doctorIdsFilter = null;
-  if (role === "admin") {
+  if (role === 'admin') {
     if (query.doctorId) {
       doctorIdsFilter = [new mongoose.Types.ObjectId(query.doctorId)];
     }
-  } else if (role === "doctor") {
+  } else if (role === 'doctor') {
     doctorIdsFilter = [new mongoose.Types.ObjectId(userId)];
-  } else if (role === "clinic_admin") {
+  } else if (role === 'clinic_admin') {
     const clinic = await clinicLeadService.getClinicByUserId(userId);
     if (!clinic) {
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "Không tìm thấy phòng khám liên kết.",
+        'Không tìm thấy phòng khám liên kết.'
       );
     }
     const doctorIds = await doctorService.getDoctorIdsByClinic(
       clinic._id,
-      clinic.clinicName,
+      clinic.clinicName
     );
     if (doctorIds.length === 0) {
       return { appointments: [], total: 0, page, limit };
     }
     doctorIdsFilter = doctorIds.map((id) => new mongoose.Types.ObjectId(id));
-  } else if (role === "patient") {
+  } else if (role === 'patient') {
     pipeline.push({
       $match: { bookingUser: new mongoose.Types.ObjectId(userId) },
     });
   } else {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Không có quyền truy cập.");
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Không có quyền truy cập.');
   }
 
   if (doctorIdsFilter) {
     pipeline.push({ $match: { doctor: { $in: doctorIdsFilter } } });
   }
   if (query.status) {
-    const statusArray = query.status.split(",").map((s) => s.trim());
+    const statusArray = query.status.split(',').map((s) => s.trim());
     if (statusArray.length === 1) {
       pipeline.push({ $match: { status: statusArray[0] } });
     } else {
@@ -804,22 +802,22 @@ export const getAppointments = async (user, query) => {
   pipeline.push(
     {
       $lookup: {
-        from: "slots",
-        localField: "slot",
-        foreignField: "_id",
-        as: "slotInfo",
+        from: 'slots',
+        localField: 'slot',
+        foreignField: '_id',
+        as: 'slotInfo',
       },
     },
-    { $unwind: { path: "$slotInfo", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$slotInfo', preserveNullAndEmptyArrays: true } },
     {
       $lookup: {
-        from: "schedules",
-        localField: "slotInfo.scheduleId",
-        foreignField: "_id",
-        as: "scheduleInfo",
+        from: 'schedules',
+        localField: 'slotInfo.scheduleId',
+        foreignField: '_id',
+        as: 'scheduleInfo',
       },
     },
-    { $unwind: { path: "$scheduleInfo", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$scheduleInfo', preserveNullAndEmptyArrays: true } }
   );
 
   // Lọc theo ngày
@@ -830,8 +828,8 @@ export const getAppointments = async (user, query) => {
     pipeline.push({
       $match: {
         $or: [
-          { "scheduleInfo.date": dateFilter },
-          { "scheduleInfo.date": { $exists: false } },
+          { 'scheduleInfo.date': dateFilter },
+          { 'scheduleInfo.date': { $exists: false } },
         ],
       },
     });
@@ -841,50 +839,50 @@ export const getAppointments = async (user, query) => {
   pipeline.push(
     {
       $lookup: {
-        from: "medicalrecords",
-        localField: "patientProfile",
-        foreignField: "_id",
-        as: "patientInfo",
+        from: 'medicalrecords',
+        localField: 'patientId',
+        foreignField: '_id',
+        as: 'patientInfo',
       },
     },
-    { $unwind: { path: "$patientInfo", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$patientInfo', preserveNullAndEmptyArrays: true } },
     {
       $lookup: {
-        from: "users",
-        localField: "doctor",
-        foreignField: "_id",
-        as: "doctorInfo",
+        from: 'users',
+        localField: 'doctor',
+        foreignField: '_id',
+        as: 'doctorInfo',
       },
     },
-    { $unwind: { path: "$doctorInfo", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$doctorInfo', preserveNullAndEmptyArrays: true } }
   );
 
   // Search
   if (query.search) {
-    const searchRegex = { $regex: query.search, $options: "i" };
+    const searchRegex = { $regex: query.search, $options: 'i' };
     pipeline.push({
       $match: {
         $or: [
-          { "patientInfo.fullName": searchRegex },
-          { "patientInfo.phone": searchRegex },
-          { "patientInfo.cccd": searchRegex },
-          { "doctorInfo.fullName": searchRegex },
+          { 'patientInfo.fullName': searchRegex },
+          { 'patientInfo.phone': searchRegex },
+          { 'patientInfo.cccd': searchRegex },
+          { 'doctorInfo.fullName': searchRegex },
         ],
       },
     });
   }
 
   // Sort
-  const sortField = query.sort?.startsWith("-")
+  const sortField = query.sort?.startsWith('-')
     ? query.sort.slice(1)
-    : query.sort || "createdAt";
-  const sortOrder = query.sort?.startsWith("-") ? -1 : 1;
+    : query.sort || 'createdAt';
+  const sortOrder = query.sort?.startsWith('-') ? -1 : 1;
   pipeline.push({ $sort: { [sortField]: sortOrder } });
 
   // Phân trang
   pipeline.push({
     $facet: {
-      metadata: [{ $count: "total" }],
+      metadata: [{ $count: 'total' }],
       data: [{ $skip: skip }, { $limit: limit }],
     },
   });
@@ -897,21 +895,21 @@ export const getAppointments = async (user, query) => {
   if (appointments.length > 0) {
     const doctorIds = [
       ...new Set(
-        appointments.map((app) => app.doctorInfo?._id).filter(Boolean),
+        appointments.map((app) => app.doctorInfo?._id).filter(Boolean)
       ),
     ];
     if (doctorIds.length > 0) {
-      const DoctorProfile = await import("../../models/DoctorProfile.js").then(
-        (m) => m.default,
+      const DoctorProfile = await import('../../models/DoctorProfile.js').then(
+        (m) => m.default
       );
       const doctorProfiles = await DoctorProfile.find({
         user: { $in: doctorIds },
       })
-        .populate("specialty", "name")
-        .populate("clinicId", "clinicName")
+        .populate('specialty', 'name')
+        .populate('clinicId', 'clinicName')
         .lean();
       const mapDoctorProfile = new Map(
-        doctorProfiles.map((dp) => [dp.user.toString(), dp]),
+        doctorProfiles.map((dp) => [dp.user.toString(), dp])
       );
 
       appointments = appointments.map((app) => {
@@ -938,7 +936,7 @@ export const getAppointments = async (user, query) => {
     ...app,
     slot: app.slotInfo,
     doctor: app.doctorInfo,
-    patientProfile: app.patientInfo,
+    patientId: app.patientInfo,
   }));
 
   return {
@@ -956,26 +954,26 @@ export const getAppointmentById = async (user, appointmentId) => {
   const { role, _id: userId } = user;
 
   const appointment = await Appointment.findById(appointmentId)
-    .populate("patientProfile")
-    .populate("doctor", "fullName email")
-    .populate("bookingUser", "fullName email")
+    .populate('patientId', 'fullName email phone')
+    .populate('doctor', 'fullName email')
+    .populate('bookingUser', 'fullName email')
     .populate({
-      path: "slot",
-      populate: { path: "scheduleId", select: "date" },
+      path: 'slot',
+      populate: { path: 'scheduleId', select: 'date' },
     });
 
   // Chuyển thành plain object để dễ dàng thêm field
   let result = appointment.toObject();
 
   if (result.doctor) {
-    const DoctorProfile = await import("../../models/DoctorProfile.js").then(
-      (m) => m.default,
+    const DoctorProfile = await import('../../models/DoctorProfile.js').then(
+      (m) => m.default
     );
     const doctorProfile = await DoctorProfile.findOne({
       user: result.doctor._id,
     })
-      .populate("specialty", "name")
-      .populate("clinicId", "clinicName"); // quan trọng: lấy thông tin clinic
+      .populate('specialty', 'name')
+      .populate('clinicId', 'clinicName'); // quan trọng: lấy thông tin clinic
 
     // Gán specialty
     result.doctor.specialty = doctorProfile?.specialty || null;
@@ -995,54 +993,54 @@ export const getAppointmentById = async (user, appointmentId) => {
   }
 
   if (!appointment) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy lịch hẹn.");
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lịch hẹn.');
   }
 
   // Kiểm tra quyền
-  if (role === "admin") {
+  if (role === 'admin') {
     // Admin được xem tất cả
-  } else if (role === "doctor") {
+  } else if (role === 'doctor') {
     // Bác sĩ chỉ xem lịch hẹn của chính mình
     if (appointment.doctor._id.toString() !== userId.toString()) {
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "Bạn không có quyền xem lịch hẹn này.",
+        'Bạn không có quyền xem lịch hẹn này.'
       );
     }
-  } else if (role === "clinic_admin") {
+  } else if (role === 'clinic_admin') {
     const clinic = await clinicLeadService.getClinicByUserId(userId);
     if (!clinic) {
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "Tài khoản không liên kết với phòng khám.",
+        'Tài khoản không liên kết với phòng khám.'
       );
     }
     const doctorIds = await doctorService.getDoctorIdsByClinic(
       clinic._id,
-      clinic.clinicName,
+      clinic.clinicName
     );
     // Log để debug
-    console.log("[getAppointmentById] doctorIds:", doctorIds);
+    console.log('[getAppointmentById] doctorIds:', doctorIds);
     console.log(
-      "[getAppointmentById] appointment.doctor._id:",
-      appointment.doctor._id.toString(),
+      '[getAppointmentById] appointment.doctor._id:',
+      appointment.doctor._id.toString()
     );
 
     if (!doctorIds.includes(appointment.doctor._id.toString())) {
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "Bạn không có quyền xem lịch hẹn này.",
+        'Bạn không có quyền xem lịch hẹn này.'
       );
     }
-  } else if (role === "patient") {
+  } else if (role === 'patient') {
     if (appointment.bookingUser._id.toString() !== userId.toString()) {
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "Bạn không có quyền xem lịch hẹn của người khác.",
+        'Bạn không có quyền xem lịch hẹn của người khác.'
       );
     }
   } else {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Không có quyền truy cập.");
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Không có quyền truy cập.');
   }
 
   return result;
@@ -1053,7 +1051,7 @@ export const completeAppointment = async (
   doctorId,
   data,
   ipAddress,
-  userAgent,
+  userAgent
 ) => {
   const { diagnosis, prescription, instructions, followUpDate } = data;
 
@@ -1061,13 +1059,13 @@ export const completeAppointment = async (
   const appointment = await Appointment.findOne({
     _id: appointmentId,
     doctor: doctorId,
-    status: "checked_in",
-  }).populate("patientProfile", "user");
+    status: 'checked_in',
+  }).populate('patientId');
 
   if (!appointment) {
     throw new ApiError(
       StatusCodes.NOT_FOUND,
-      "Không tìm thấy lịch hẹn đang chờ khám hoặc bạn không có quyền.",
+      'Không tìm thấy lịch hẹn đang chờ khám hoặc bạn không có quyền.'
     );
   }
 
@@ -1076,7 +1074,7 @@ export const completeAppointment = async (
   if (existing) {
     throw new ApiError(
       StatusCodes.CONFLICT,
-      "Lịch hẹn này đã được ghi nhận kết quả khám trước đó.",
+      'Lịch hẹn này đã được ghi nhận kết quả khám trước đó.'
     );
   }
 
@@ -1087,7 +1085,7 @@ export const completeAppointment = async (
     consultation = await MedicalConsultation.create({
       appointmentId,
       doctorId,
-      patientId: appointment.patientProfile.user,
+      patientId: appointment.patientId.user,
       diagnosis,
       prescription,
       instructions,
@@ -1096,9 +1094,9 @@ export const completeAppointment = async (
 
     // 4. Cập nhật appointment
     const updatedAppointment = await Appointment.findOneAndUpdate(
-      { _id: appointmentId, doctor: doctorId, status: "checked_in" },
-      { status: "completed", completedAt: new Date() },
-      { returnDocument: "after" },
+      { _id: appointmentId, doctor: doctorId, status: 'checked_in' },
+      { status: 'completed', completedAt: new Date() },
+      { returnDocument: 'after' }
     );
 
     if (!updatedAppointment) {
@@ -1106,7 +1104,7 @@ export const completeAppointment = async (
       await MedicalConsultation.findByIdAndDelete(consultation._id);
       throw new ApiError(
         StatusCodes.CONFLICT,
-        "Lịch hẹn đã thay đổi trạng thái, không thể hoàn thành.",
+        'Lịch hẹn đã thay đổi trạng thái, không thể hoàn thành.'
       );
     }
 
@@ -1118,8 +1116,8 @@ export const completeAppointment = async (
     // 6. Audit log
     await AuditLog.create({
       userId: doctorId,
-      action: "COMPLETE_APPOINTMENT",
-      status: "SUCCESS",
+      action: 'COMPLETE_APPOINTMENT',
+      status: 'SUCCESS',
       ipAddress,
       userAgent,
       details: {
@@ -1140,7 +1138,7 @@ export const completeAppointment = async (
         } else if (doctorProfile.customClinicName) {
           const clinic = await ClinicLead.findOne({
             clinicName: doctorProfile.customClinicName,
-            status: "resolved",
+            status: 'resolved',
           });
           if (clinic) clinicId = clinic._id;
         }
@@ -1153,17 +1151,17 @@ export const completeAppointment = async (
             clinicAmount = 0;
           const paymentMethod = appointment.paymentMethod;
 
-          if (paymentMethod === "online") {
+          if (paymentMethod === 'online') {
             const payment = await Payment.findOne({
               appointmentId,
-              status: "paid",
+              status: 'paid',
             });
             if (payment) {
               const totalAmount = payment.amount;
               platformAmount = totalAmount * 0.6;
               clinicAmount = totalAmount * 0.4;
             }
-          } else if (paymentMethod === "offline") {
+          } else if (paymentMethod === 'offline') {
             const fee = doctorProfile.consultationFee || 0;
             platformAmount = fee * 0.6;
             clinicAmount = fee * 0.4;
@@ -1176,38 +1174,38 @@ export const completeAppointment = async (
               platformAmount,
               clinicAmount,
               method: paymentMethod,
-              status: "completed",
+              status: 'completed',
               calculatedAt: new Date(),
             });
             logger.info(
-              `Đã tạo revenue split cho appointment ${appointmentId}: platform=${platformAmount}, clinic=${clinicAmount}`,
+              `Đã tạo revenue split cho appointment ${appointmentId}: platform=${platformAmount}, clinic=${clinicAmount}`
             );
           }
         }
       } else {
         logger.warn(
-          `Không tìm thấy clinicId cho bác sĩ ${doctorId}, bỏ qua tạo revenue split.`,
+          `Không tìm thấy clinicId cho bác sĩ ${doctorId}, bỏ qua tạo revenue split.`
         );
       }
     } catch (splitError) {
       // Chỉ log lỗi, không ảnh hưởng đến kết quả hoàn thành ca khám
       logger.error(
-        `Lỗi tạo revenue split cho appointment ${appointmentId}: ${splitError.message}`,
+        `Lỗi tạo revenue split cho appointment ${appointmentId}: ${splitError.message}`
       );
     }
 
     logger.info(
-      `Bác sĩ ${doctorId} đã hoàn thành appointment ${appointmentId}`,
+      `Bác sĩ ${doctorId} đã hoàn thành appointment ${appointmentId}`
     );
     return {
-      message: "Kết thúc khám thành công.",
+      message: 'Kết thúc khám thành công.',
       consultation,
     };
   } catch (error) {
     // Nếu lỗi xảy ra và consultation đã được tạo, rollback
     if (consultation) {
       await MedicalConsultation.findByIdAndDelete(consultation._id).catch((e) =>
-        logger.error(`Rollback consultation thất bại: ${e.message}`),
+        logger.error(`Rollback consultation thất bại: ${e.message}`)
       );
     }
     logger.error(`Lỗi hoàn thành ca khám: ${error.message}`);

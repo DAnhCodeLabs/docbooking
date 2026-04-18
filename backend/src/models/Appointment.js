@@ -14,7 +14,7 @@ const appointmentSchema = new mongoose.Schema(
   {
     patientProfile: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "MedicalRecord",
+      ref: "User",
       required: true,
     },
     bookingUser: {

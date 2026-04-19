@@ -40,6 +40,43 @@ class AiService {
       }
     }
   }
+
+  /**
+   * [PRODUCTION READY] - Mã hóa văn bản thành Vector 768 chiều
+   * @param {string} text - Văn bản cần mã hóa
+   * @returns {Promise<number[]>} - Mảng số thực (Vector)
+   */
+  static async generateEmbedding(text) {
+    try {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        console.warn("⚠️ Cảnh báo: Thiếu GEMINI_API_KEY trong file .env");
+        return [];
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`;
+
+      const response = await axios.post(url, {
+        model: "models/gemini-embedding-001",
+        content: { parts: [{ text: text }] },
+      });
+
+      if (
+        response.data &&
+        response.data.embedding &&
+        response.data.embedding.values
+      ) {
+        return response.data.embedding.values;
+      }
+      return [];
+    } catch (error) {
+      console.error(
+        "❌ Lỗi tạo Embedding tại AiService:",
+        error?.response?.data || error.message,
+      );
+      return []; // Fallback an toàn, trả về mảng rỗng để không làm chết server
+    }
+  }
 }
 
 export default AiService;

@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-
+import AiService from "../modules/Ai/ChatBot/AiService.js";
 // Schema bằng cấp (giữ nguyên)
 const qualificationSchema = new mongoose.Schema(
   {
@@ -97,11 +97,50 @@ const doctorProfileSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    embedding: { type: [Number], default: [] },
   },
   {
     timestamps: true,
   },
 );
+
+doctorProfileSchema.pre("save", async function (next) {
+  // Chỉ gọi AI nếu có sự thay đổi về chuyên môn để tiết kiệm API
+  if (
+    this.isModified("bio") ||
+    this.isModified("experience") ||
+    this.isModified("specialty") ||
+    this.isNew
+  ) {
+    try {
+      // 1. Lấy tên chuyên khoa (tránh lỗi null nếu chuyên khoa chưa có)
+      let specName = "Đa khoa";
+      if (this.specialty) {
+        const specialtyDoc = await mongoose
+          .model("Specialty")
+          .findById(this.specialty)
+          .select("name");
+        if (specialtyDoc) specName = specialtyDoc.name;
+      }
+
+      // 2. Gom chữ thành Context sắc nét
+      const textToEmbed = `Bác sĩ chuyên khoa ${specName}. Kinh nghiệm thực tế ${this.experience} năm. Thông tin chuyên môn và điều trị: ${this.bio || "Không có"}`;
+
+      // 3. Xin tọa độ từ AI
+      const vectorData = await AiService.generateEmbedding(textToEmbed);
+      if (vectorData.length > 0) {
+        this.embedding = vectorData;
+      }
+    } catch (error) {
+      console.error(
+        `⚠️ Lỗi Mongoose Hook (Bác sĩ ID: ${this._id}):`,
+        error.message,
+      );
+      // Vẫn gọi next() để DB lưu được text, đảm bảo luồng Admin không bị treo
+    }
+  }
+  next();
+});
 
 // Indexes
 doctorProfileSchema.index({ status: 1 });

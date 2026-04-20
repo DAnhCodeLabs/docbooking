@@ -7,9 +7,10 @@ import Specialty from "../../../models/Specialty.js";
 import ApiError from "../../../utils/ApiError.js";
 import AiService from "./AiService.js";
 import * as patientDataService from "./patientDataService.js";
+import { parsePatientQuery } from "./intentParser.js";
 
 // =====================================================================
-// [CORE ALGORITHM] - TÍNH ĐIỂM TƯƠNG ĐỒNG VECTOR (COSINE SIMILARITY)
+// [CORE] - THUẬT TOÁN TÍNH ĐIỂM VECTOR (COSINE SIMILARITY)
 // =====================================================================
 const calculateCosineSimilarity = (vecA, vecB) => {
   if (
@@ -32,6 +33,9 @@ const calculateCosineSimilarity = (vecA, vecB) => {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 };
 
+// =====================================================================
+// HÀM XỬ LÝ CHÍNH (MAIN CONTROLLER)
+// =====================================================================
 export const handleAiRAGQuery = async (
   sessionId,
   message,
@@ -39,266 +43,358 @@ export const handleAiRAGQuery = async (
   intentType = null,
 ) => {
   const lowerMsg = message.toLowerCase();
+  console.log(
+    `\n=================== 🚀 BẮT ĐẦU PHIÊN XỬ LÝ AI 🚀 ===================`,
+  );
+  console.log(
+    `👤 [USER QUERY]: "${message}" | SessionID: ${sessionId.substring(0, 8)}... | UserID: ${userId || "Khách"}`,
+  );
 
-  // =====================================================================
-  // BƯỚC 1: QUẢN LÝ PHIÊN CHAT & RÚT TRÍ NHỚ (NGỮ CẢNH LỊCH SỬ)
-  // =====================================================================
+  // ---------------------------------------------------------------------
+  // BƯỚC 1: XỬ LÝ DATABASE & SESSION (BẢO MẬT VÁCH NGĂN)
+  // ---------------------------------------------------------------------
+  console.log(`🛡️ [SECURITY]: Đang kiểm tra tính hợp lệ của Session...`);
   let session = await ChatSession.findOne({ sessionId });
 
   if (!session) {
     try {
       session = await ChatSession.create({
         sessionId,
-        user: userId,
+        user: userId || null,
         messages: [],
       });
+      console.log(`   -> Đã tạo Session mới thành công.`);
     } catch (err) {
       if (err.code === 11000)
         session = await ChatSession.findOne({ sessionId });
       else throw err;
     }
   } else {
-    if (
-      session.user &&
-      session.user.toString() !== (userId?.toString() || null)
-    ) {
+    // Chống chiếm đoạt Session (Anti-Hijacking)
+    const isSessionGuest = !session.user;
+    const isRequestGuest = !userId;
+    if (isSessionGuest !== isRequestGuest) {
+      console.error(
+        `❌ [SECURITY ALERT]: Sai lệch trạng thái Đăng nhập. Từ chối truy cập!`,
+      );
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "Phiên trò chuyện không hợp lệ hoặc đã hết hạn.",
+        "Phiên làm việc không đồng bộ. Vui lòng tải lại trang.",
       );
     }
-    if (!session.user && userId) session.user = userId;
+    if (
+      session.user &&
+      userId &&
+      session.user.toString() !== userId.toString()
+    ) {
+      console.error(
+        `❌ [SECURITY ALERT]: User ID không khớp chủ sở hữu Session. Từ chối truy cập!`,
+      );
+      throw new ApiError(
+        StatusCodes.FORBIDDEN,
+        "Bạn không có quyền truy cập phiên chat này.",
+      );
+    }
+    console.log(`   -> Session hợp lệ. Chủ sở hữu xác thực thành công.`);
   }
 
-  // Rút trích 2 tin nhắn gần nhất của Bệnh nhân để AI không bị "mất trí nhớ"
+  // Lấy ngữ cảnh cũ (Tối đa 2 tin user gần nhất để Vector hiểu câu tiếp nối)
   let historicalContext = "";
-  if (session.messages && session.messages.length > 0) {
+  if (session.messages?.length > 0) {
     const userMsgs = session.messages.filter((m) => m.role === "user");
     historicalContext = userMsgs
       .slice(-2)
-      .map((m) => m.content[0].text)
+      .map((m) => m.content[0]?.text || "")
       .join(" | ");
   }
 
-  // =====================================================================
-  // BƯỚC 2: TRUY XUẤT VECTOR CÓ NHẬN THỨC NGỮ CẢNH (CONTEXT-AWARE)
-  // =====================================================================
-  const allSpecialties = await Specialty.find({ status: "active" })
-    .select("name")
-    .lean();
+  // ---------------------------------------------------------------------
+  // BƯỚC 2: PHÂN TÍCH Ý ĐỊNH & ĐỊNH TUYẾN (SEMANTIC ROUTING)
+  // ---------------------------------------------------------------------
+  console.log(`🧭 [ROUTING]: Đang phân tích ngữ nghĩa câu hỏi...`);
+  const parsedIntent = intentType
+    ? { type: intentType }
+    : parsePatientQuery(message);
+  const currentIntent = parsedIntent.type;
 
-  // Gộp ngữ cảnh để Vector Search hiểu được cả "Bệnh lý" lẫn "Yêu cầu phụ (kinh nghiệm/địa điểm)"
-  const searchQueryText = historicalContext
-    ? `Ngữ cảnh trước đó: "${historicalContext}". Câu hỏi hiện tại: "${message}"`
-    : message;
+  // Nhận diện câu hỏi cá nhân
+  const isPersonalQuery =
+    ["medicalRecord", "appointment", "consultation", "payment"].includes(
+      currentIntent,
+    ) ||
+    /hồ sơ|lịch sử|kết quả khám|toa thuốc|đơn thuốc|thanh toán|viện phí/i.test(
+      lowerMsg,
+    );
 
-  let targetedDoctors = [];
-  try {
-    const queryVector = await AiService.generateEmbedding(searchQueryText);
+  // Nhận diện câu chào
+  const isGreeting =
+    /^(chào|hi|hello|alo|hey|ai đấy|bạn là ai|bot|nexus)/i.test(
+      message.trim(),
+    ) && message.split(/\s+/).length <= 6;
 
-    // [CODE CHUẨN SCHEMA] - Populate chính xác trường clinicId
-    const allActiveDoctors = await DoctorProfile.find({ status: "active" })
-      .populate("user", "fullName")
-      .populate("specialty", "name")
-      .populate("clinicId", "clinicName") // <-- Lấy tên phòng khám từ bảng ClinicLead
-      .select(
-        "user specialty clinicId customClinicName experience consultationFee embedding",
-      )
-      .lean();
+  // Quyết định chạy Vector
+  const needsMedicalKnowledge = !isPersonalQuery && !isGreeting;
 
-    if (queryVector.length > 0) {
-      const scoredDoctors = allActiveDoctors.map((doc) => {
-        const score = calculateCosineSimilarity(queryVector, doc.embedding);
-        return { ...doc, score };
-      });
+  console.log(`   -> Intent nội bộ: ${currentIntent || "Không có"}`);
+  console.log(`   -> Yêu cầu cá nhân: ${isPersonalQuery ? "Có" : "Không"}`);
+  console.log(
+    `   -> Yêu cầu tra cứu Y khoa: ${needsMedicalKnowledge ? "Có" : "Không (Bỏ qua Vector)"}`,
+  );
 
-      scoredDoctors.sort((a, b) => b.score - a.score);
+  // ---------------------------------------------------------------------
+  // BƯỚC 3: THU THẬP DỮ LIỆU RAG (DATA GATHERING)
+  // ---------------------------------------------------------------------
+  let doctorInfoText = "(Không yêu cầu tìm bác sĩ)";
+  let clinicInfoText = "(Không yêu cầu tìm phòng khám)";
+  let privateContext = userId
+    ? "(Không có yêu cầu trích xuất dữ liệu cá nhân)"
+    : "";
+  let specialtyNames = "";
 
-      // Lọc Top 5 bác sĩ có điểm Cosine > 0.4
-      targetedDoctors = scoredDoctors.filter((d) => d.score > 0.4).slice(0, 5);
+  // 3.1. LUỒNG VECTOR SEARCH (Tìm Bác sĩ / Phòng khám)
+  if (needsMedicalKnowledge) {
+    console.log(
+      `🔍 [VECTOR SEARCH]: Đang kết nối Google Gemini để mã hóa Embedding...`,
+    );
+    try {
+      const allSpecialties = await Specialty.find({ status: "active" })
+        .select("name")
+        .lean();
+      specialtyNames = allSpecialties.map((s) => s.name).join(", ");
 
-      // --- LOG TERMINAL KIỂM CHỨNG ---
-      console.log(`\n🤖 [VECTOR SEARCH TRUY VẤN]: "${searchQueryText}"`);
-      if (targetedDoctors.length > 0) {
-        targetedDoctors.forEach((d, i) =>
-          console.log(
-            `   🏆 Top ${i + 1}: BS ${d.user?.fullName || "N/A"} (Khoa: ${d.specialty?.name || "N/A"}) - Score: ${d.score.toFixed(4)}`,
-          ),
+      const searchQueryText = historicalContext
+        ? `Ngữ cảnh: "${historicalContext}". Câu hỏi: "${message}"`
+        : message;
+      const queryVector = await AiService.generateEmbedding(searchQueryText);
+
+      if (queryVector.length > 0) {
+        console.log(
+          `   -> Mã hóa thành công (768 chiều). Bắt đầu quét CSDL Bác sĩ (OOM Protected)...`,
+        );
+        const doctorCursor = DoctorProfile.find({ status: "active" })
+          .populate("user", "fullName")
+          .populate("specialty", "name")
+          .populate("clinicId", "clinicName")
+          .select(
+            "user specialty clinicId customClinicName experience embedding",
+          )
+          .cursor();
+
+        let processCount = 0;
+        const validCandidates = [];
+
+        // Vòng lặp nhường CPU an toàn
+        for await (const doc of doctorCursor) {
+          if (++processCount % 50 === 0)
+            await new Promise((resolve) => setImmediate(resolve));
+          const score = calculateCosineSimilarity(queryVector, doc.embedding);
+          if (score > 0.4) {
+            const doctorObj = doc.toObject();
+            delete doctorObj.embedding; // Thu gom rác ngay
+            validCandidates.push({ ...doctorObj, score });
+          }
+        }
+
+        validCandidates.sort((a, b) => b.score - a.score);
+        const targetedDoctors = validCandidates.slice(0, 5);
+        console.log(
+          `   -> Đã quét qua ${processCount} bác sĩ. Tìm thấy ${targetedDoctors.length} ứng viên phù hợp (>0.4).`,
+        );
+
+        if (targetedDoctors.length > 0) {
+          doctorInfoText = targetedDoctors
+            .map((d, i) => {
+              const clinic =
+                d.clinicId?.clinicName ||
+                d.customClinicName ||
+                "Hệ thống DOCGO";
+              return `${i + 1}. BS ${d.user?.fullName} (Khoa: ${d.specialty?.name}) - Làm việc tại: ${clinic} - KN: ${d.experience || 0} năm.`;
+            })
+            .join("\n");
+        } else {
+          doctorInfoText =
+            "(Không tìm thấy bác sĩ phù hợp với triệu chứng này).";
+        }
+      }
+
+      // Quét Phòng khám theo địa lý
+      const isHanoi = /hà nội|hn|cầu giấy|đống đa/i.test(lowerMsg);
+      const isHCM = /hồ chí minh|hcm|sài gòn|quận 1|quận 3|tân bình/i.test(
+        lowerMsg,
+      );
+      const clinicQuery = { status: "resolved" };
+      if (isHanoi) clinicQuery.address = { $regex: "Hà Nội|HN", $options: "i" };
+      else if (isHCM)
+        clinicQuery.address = { $regex: "Hồ Chí Minh|HCM", $options: "i" };
+
+      const clinics = await ClinicLead.find(clinicQuery)
+        .select("clinicName address")
+        .limit(10)
+        .lean();
+      if (clinics.length > 0) {
+        clinicInfoText = clinics
+          .map((c) => `+ ${c.clinicName} (ĐC: ${c.address})`)
+          .join("\n");
+        console.log(
+          `   -> Tìm thấy ${clinics.length} phòng khám ở khu vực yêu cầu.`,
         );
       }
-      console.log(
-        `=========================================================\n`,
-      );
+    } catch (error) {
+      console.error("❌ [LỖI VECTOR SEARCH]:", error.message);
     }
-  } catch (err) {
-    console.error("Lỗi thuật toán Vector:", err);
   }
 
-  // =====================================================================
-  // BƯỚC 3: TRUY XUẤT ĐỊA LÝ & PHÒNG KHÁM VÀ ĐÓNG GÓI DỮ LIỆU
-  // =====================================================================
-  const isHanoi = /hà nội|hn|cầu giấy|đống đa/i.test(lowerMsg);
-  const isHCM = /hồ chí minh|hcm|sài gòn|quận 1|quận 3|tân bình/i.test(
-    lowerMsg,
-  );
-  const clinicQuery = { status: "resolved" }; // Chỉ lấy phòng khám đã duyệt
-  if (isHanoi) clinicQuery.address = { $regex: "Hà Nội|HN", $options: "i" };
-  else if (isHCM)
-    clinicQuery.address = { $regex: "Hồ Chí Minh|HCM", $options: "i" };
-
-  const clinics = await ClinicLead.find(clinicQuery)
-    .select("clinicName address")
-    .limit(10)
-    .lean();
-
-  const specialtyNames = allSpecialties.map((s) => s.name).join(", ");
-  const clinicInfoText =
-    clinics.length > 0
-      ? clinics.map((c) => `+ ${c.clinicName} (${c.address})`).join("\n")
-      : "(Chưa tìm thấy cơ sở y tế theo khu vực)";
-
-  // [CODE CHUẨN SCHEMA] - Thuật toán ưu tiên hiển thị Tên Bệnh Viện
-  const doctorInfoText =
-    targetedDoctors.length > 0
-      ? targetedDoctors
-          .map((d, i) => {
-            // Ưu tiên 1: Tên từ bảng ClinicLead. Ưu tiên 2: Tên custom bác sĩ tự điền. Mặc định: DOCGO
-            const clinicName =
-              d.clinicId?.clinicName || d.customClinicName || "Hệ thống DOCGO";
-
-            return `${i + 1}. BS: ${d.user?.fullName || "N/A"} | Nơi làm việc: ${clinicName} | Khoa: ${d.specialty?.name || "N/A"} | KN: ${d.experience || 0} năm | Phí: ${(d.consultationFee || 0).toLocaleString("vi-VN")} VNĐ`;
-          })
-          .join("\n")
-      : "(Hiện không có bác sĩ nào khớp hoàn toàn với triệu chứng/chuyên khoa này)";
-
-  // =====================================================================
-  // BƯỚC 4: TRUY XUẤT DỮ LIỆU CÁ NHÂN (PRIVATE CONTEXT)
-  // =====================================================================
-  let privateContext = "";
-  if (userId) {
-    privateContext = `\n[TRẠNG THÁI TÀI KHOẢN]: Đã đăng nhập.\n[DỮ LIỆU CÁ NHÂN (Tuyệt mật)]:\n`;
-    const isMedicalQuery = intentType === "medicalRecord" || !intentType;
-    const isAppointmentQuery = intentType === "appointment" || !intentType;
-    const isConsultationQuery = intentType === "consultation" || !intentType;
-    const isPaymentQuery = intentType === "payment" || !intentType;
-
-    const [records, appsResult, latestCon, payments] = await Promise.all([
-      isMedicalQuery ? patientDataService.getMedicalRecords(userId) : null,
-      isAppointmentQuery
-        ? patientDataService.getAppointments(userId, {
-            limit: 3,
-            sort: "-createdAt",
-          })
-        : null,
-      isConsultationQuery && patientDataService.getLatestConsultation
-        ? patientDataService.getLatestConsultation(userId)
-        : null,
-      isPaymentQuery && patientDataService.getPayments
-        ? patientDataService.getPayments(userId, { limit: 3 })
-        : null,
-    ]);
-
-    let hasData = false;
-    if (records?.length > 0) {
-      hasData = true;
-      privateContext +=
-        `* HỒ SƠ:\n` +
-        records
-          .map(
-            (r, i) =>
-              `  ${i + 1}. Tên: ${r.fullName} | Sinh: ${r.dateOfBirth ? new Date(r.dateOfBirth).toLocaleDateString("vi-VN") : "N/A"} | Nhóm máu: ${r.bloodGroup || "Chưa rõ"}`,
-          )
-          .join("\n") +
-        "\n";
+  // 3.2. LUỒNG DỮ LIỆU CÁ NHÂN
+  if (userId && isPersonalQuery) {
+    console.log(
+      `🗄️ [PRIVATE DATA]: Đang trích xuất dữ liệu Y tế & Lịch khám của người dùng...`,
+    );
+    try {
+      const [records, appsResult] = await Promise.all([
+        patientDataService.getMedicalRecords(userId),
+        patientDataService.getAppointments(userId, {
+          limit: 3,
+          sort: "-createdAt",
+        }),
+      ]);
+      privateContext = `[THÔNG TIN CÁ NHÂN CỦA TÀI KHOẢN ĐANG CHAT]:\n`;
+      let hasData = false;
+      if (records?.length > 0) {
+        hasData = true;
+        privateContext +=
+          `* SỔ Y TẾ: \n` +
+          records
+            .map(
+              (r, i) =>
+                `  ${i + 1}. Tên: ${r.fullName} | Nhóm máu: ${r.bloodGroup || "N/A"}`,
+            )
+            .join("\n") +
+          "\n";
+      }
+      if (appsResult?.appointments?.length > 0) {
+        hasData = true;
+        privateContext +=
+          `* LỊCH HẸN GẦN NHẤT: \n` +
+          appsResult.appointments
+            .map(
+              (a) =>
+                `  - Ngày: ${a.slot?.startTime}, Bác sĩ: ${a.doctor?.fullName}, Trạng thái: ${a.status}`,
+            )
+            .join("\n") +
+          "\n";
+      }
+      if (!hasData)
+        privateContext +=
+          "(Hệ thống chưa ghi nhận hồ sơ y tế hay lịch hẹn nào.)\n";
+      console.log(`   -> Trích xuất dữ liệu cá nhân thành công.`);
+    } catch (error) {
+      console.error("❌ [LỖI PRIVATE DATA]:", error.message);
     }
-    if (appsResult?.appointments?.length > 0) {
-      hasData = true;
-      privateContext +=
-        `* LỊCH HẸN GẦN NHẤT:\n` +
-        appsResult.appointments
-          .map(
-            (a, i) =>
-              `  - Ngày ${a.slot?.startTime || "N/A"}, Bác sĩ: ${a.doctor?.fullName || "N/A"}, Trạng thái: ${a.status}`,
-          )
-          .join("\n") +
-        "\n";
-    }
-    if (latestCon) {
-      hasData = true;
-      privateContext += `* KẾT QUẢ KHÁM GẦN NHẤT:\n  - Chẩn đoán: ${latestCon.diagnosis}\n`;
-    }
-    if (payments?.length > 0) {
-      hasData = true;
-      privateContext +=
-        `* THANH TOÁN:\n` +
-        payments
-          .map(
-            (p) =>
-              `  - ${p.amount.toLocaleString("vi-VN")} VNĐ, Trạng thái: ${p.status}`,
-          )
-          .join("\n") +
-        "\n";
-    }
-    if (!hasData)
-      privateContext += `(Hệ thống chưa tìm thấy dữ liệu cá nhân nào)\n`;
-  } else {
-    privateContext = `\n[TRẠNG THÁI TÀI KHOẢN]: Khách vãng lai (Chưa đăng nhập).\n`;
   }
 
-  // =====================================================================
-  // BƯỚC 5: TẠO PROMPT VÀ GỌI AI ENGINE
-  // =====================================================================
-  const DYNAMIC_SYSTEM_PROMPT = `Bạn là trợ lý y tế thông minh, tận tâm của hệ thống DOCGO. Giọng điệu nhẹ nhàng, chuyên nghiệp, đồng cảm.
-QUY TẮC BẮT BUỘC:
-1. Không đọc to các thẻ kỹ thuật như [TRẠNG THÁI TÀI KHOẢN] hay [DỮ LIỆU CÁ NHÂN].
-2. Tư vấn theo 4 bước: Đồng cảm -> Suy luận bệnh -> Gợi ý bác sĩ -> Hướng dẫn đặt lịch.
-3. Khi giới thiệu Bác sĩ, BẮT BUỘC phải ghép nối và đọc rõ Bác sĩ đó đang làm việc tại Bệnh viện/Phòng khám nào (Nơi làm việc) dựa trên danh sách cung cấp bên dưới.
-
-[DỮ LIỆU HỆ THỐNG]:
-* CHUYÊN KHOA ĐANG HỖ TRỢ: ${specialtyNames}
-* DANH SÁCH BÁC SĨ (Đã lọc theo ngữ cảnh Vector):
-${doctorInfoText}
-* HỆ THỐNG CƠ SỞ Y TẾ (Phù hợp vị trí khách hàng):
-${clinicInfoText}
-${privateContext}`;
-
-  // Lưu tin nhắn người dùng
+  // ---------------------------------------------------------------------
+  // BƯỚC 4: LƯU TIN NHẮN GỐC VÀO DATABASE
+  // ---------------------------------------------------------------------
   session.messages.push({ role: "user", content: [{ text: message }] });
   await session.save();
+  console.log(`💾 [DATABASE]: Đã lưu tin nhắn của User vào MongoDB.`);
 
-  // Sliding Window: Lấy trí nhớ ngắn hạn
-  const recentMessages = session.messages.slice(-10).map((msg) => ({
-    role: msg.role,
-    content: [{ text: msg.content[0].text }],
-  }));
+  // ---------------------------------------------------------------------
+  // BƯỚC 5: CHUẨN HÓA MẢNG & BƠM NGỮ CẢNH (PROMPT INJECTION)
+  // ---------------------------------------------------------------------
+  console.log(
+    `🔧 [PRE-PROCESSING]: Đang chuẩn hóa cấu trúc Role (Khắc phục lỗi Google 400)...`,
+  );
+  const rawRecent = session.messages.slice(-8); // Giữ bộ nhớ 8 tin
+  const normalizedMessages = [];
 
-  // Gọi AI
-  const aiResponseText = await AiService.askPythonEngine([
-    { role: "system", content: [{ text: DYNAMIC_SYSTEM_PROMPT }] },
-    ...recentMessages,
-  ]);
+  // Thuật toán gộp Role giống nhau liên tiếp
+  for (const msg of rawRecent) {
+    const role = msg.role === "assistant" ? "assistant" : "user";
+    const text = msg.content[0]?.text || "";
 
-  // Lưu phản hồi
+    if (normalizedMessages.length === 0) {
+      normalizedMessages.push({ role, content: [{ text }] });
+    } else {
+      const lastMsg = normalizedMessages[normalizedMessages.length - 1];
+      if (lastMsg.role === role) {
+        lastMsg.content[0].text += `\n\n${text}`;
+      } else {
+        normalizedMessages.push({ role, content: [{ text }] });
+      }
+    }
+  }
+
+  // KỊCH BẢN CHUYÊN GIA 4 BƯỚC
+  const SYSTEM_INSTRUCTION = `[CHỈ THỊ DÀNH CHO AI - HỆ THỐNG DOCGO]:
+Bạn là Trợ lý Điều phối Y tế (Healthcare Navigator) của DOCGO.
+LƯU Ý PHÁP LÝ: Bạn KHÔNG chẩn đoán bệnh chính thức và KHÔNG kê đơn thuốc. Bạn chỉ cung cấp thông tin y khoa tham khảo và hỗ trợ kết nối bệnh nhân với bác sĩ.
+
+[NGUYÊN TẮC TƯ VẤN BẮT BUỘC]:
+1. TRUY VẤN HỒ SƠ: Nếu bệnh nhân hỏi thông tin cá nhân, CHỈ DÙNG dữ liệu trong mục [THÔNG TIN CÁ NHÂN CỦA TÀI KHOẢN ĐANG CHAT].
+2. TƯ VẤN TRIỆU CHỨNG BỆNH LÝ (Bắt buộc theo 4 bước):
+   - Bước 1: Giải thích ngắn gọn về triệu chứng.
+   - Bước 2: Chỉ định đúng Chuyên khoa cần khám.
+   - Bước 3: Nếu mục [DANH SÁCH BÁC SĨ] có dữ liệu, hãy giới thiệu 1-3 bác sĩ/phòng khám sát với bệnh lý nhất.
+   - Bước 4: Chốt tư vấn (Luôn nằm ở cuối câu):
+      + Nếu chưa biết bệnh nhân ở tỉnh/thành phố nào: "Bạn đang sinh sống ở khu vực nào (Hà Nội, TP.HCM...) để tôi gợi ý phòng khám gần nhất?"
+      + Nếu đã biết vị trí: "Bạn có muốn tôi hỗ trợ đặt lịch với bác sĩ này không?"
+
+[DỮ LIỆU ĐƯỢC CUNG CẤP CHO PHIÊN NÀY]:
+* CÁC CHUYÊN KHOA HIỆN CÓ: ${specialtyNames}
+* DANH SÁCH BÁC SĨ (AI Lọc):
+${doctorInfoText}
+* CƠ SỞ Y TẾ:
+${clinicInfoText}
+${privateContext}
+
+[CÂU HỎI THỰC SỰ CỦA NGƯỜI DÙNG]:
+${message}`;
+
+  normalizedMessages[normalizedMessages.length - 1].content[0].text =
+    SYSTEM_INSTRUCTION;
+
+  console.log(
+    `🧠 [TRÍ NHỚ AI]: Đã chuẩn hóa thành ${normalizedMessages.length} luồng (User/Assistant). Gửi Prompt sang Python...`,
+  );
+
+  // ---------------------------------------------------------------------
+  // BƯỚC 6: GỌI AI VÀ LƯU KẾT QUẢ
+  // ---------------------------------------------------------------------
+  let aiResponseText = "";
+  try {
+    aiResponseText = await AiService.askPythonEngine(normalizedMessages);
+    console.log(`🤖 [AI SUCCESS]: Nhận phản hồi thành công từ Python Engine!`);
+  } catch (error) {
+    console.error("🔥 [LỖI MẠNG AI ENGINE]:", error.message);
+    aiResponseText =
+      "Xin lỗi, hệ thống AI đang bảo trì hoặc đường truyền bị gián đoạn. Vui lòng thử lại sau giây lát.";
+  }
+
   session.messages.push({
     role: "assistant",
     content: [{ text: aiResponseText }],
   });
   await session.save();
+  console.log(`💾 [DATABASE]: Đã lưu phản hồi của AI vào MongoDB.`);
+  console.log(
+    `=================== 🏁 KẾT THÚC PHIÊN XỬ LÝ 🏁 ===================\n`,
+  );
 
-  return {
-    sessionId: session.sessionId,
-    reply: aiResponseText,
-    messageCount: session.messages.length,
-  };
+  return { sessionId: session.sessionId, reply: aiResponseText };
 };
 
+// =====================================================================
+// ROUTER HANDLER
+// =====================================================================
 export const processChat = asyncHandler(async (req, res) => {
   const { sessionId, message } = req.body;
   if (!sessionId || !message)
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      "Yêu cầu cung cấp sessionId và message.",
+      "Thiếu dữ liệu sessionId hoặc message.",
     );
+
   const result = await handleAiRAGQuery(sessionId, message, null, null);
   res.status(StatusCodes.OK).json({ success: true, data: result });
 });

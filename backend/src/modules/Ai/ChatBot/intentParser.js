@@ -63,26 +63,26 @@ const detectType = (lowerMsg) => {
   // 1. Appointment – lịch hẹn, lịch sử khám
   if (
     /lịch hẹn|cuộc hẹn|lịch khám|lịch sử khám|khám bệnh|đặt lịch|lịch hẹn sắp tới/.test(
-      lowerMsg
+      lowerMsg,
     )
   ) {
-    return 'appointment';
+    return "appointment";
   }
   // 2. Consultation – kết quả khám, đơn thuốc
   if (
     /kết quả khám|chẩn đoán|đơn thuốc|toa thuốc|hướng dẫn|tái khám/.test(
-      lowerMsg
+      lowerMsg,
     )
   ) {
-    return 'consultation';
+    return "consultation";
   }
   // 3. Medical record – hồ sơ, bảo hiểm,...
   if (/hồ sơ|bảo hiểm|nhóm máu|dị ứng|cccd|thông tin cá nhân/.test(lowerMsg)) {
-    return 'medicalRecord';
+    return "medicalRecord";
   }
   // 4. Payment – thanh toán
   if (/thanh toán|tiền|nợ|hoàn tiền|đã trả|chưa trả|chi phí/.test(lowerMsg)) {
-    return 'payment';
+    return "payment";
   }
   return null;
 };
@@ -119,12 +119,12 @@ const extractDateFromString = (message) => {
  * @returns {string|null}
  */
 const extractRelativeTime = (lowerMsg) => {
-  if (/gần nhất|mới nhất|cuối cùng/.test(lowerMsg)) return 'latest';
-  if (/hôm qua/.test(lowerMsg)) return 'yesterday';
-  if (/hôm nay/.test(lowerMsg)) return 'today';
-  if (/tuần trước/.test(lowerMsg)) return 'last_week';
-  if (/tuần này/.test(lowerMsg)) return 'this_week';
-  if (/tháng trước/.test(lowerMsg)) return 'last_month';
+  if (/gần nhất|mới nhất|cuối cùng/.test(lowerMsg)) return "latest";
+  if (/hôm qua/.test(lowerMsg)) return "yesterday";
+  if (/hôm nay/.test(lowerMsg)) return "today";
+  if (/tuần trước/.test(lowerMsg)) return "last_week";
+  if (/tuần này/.test(lowerMsg)) return "this_week";
+  if (/tháng trước/.test(lowerMsg)) return "last_month";
   return null;
 };
 
@@ -134,12 +134,71 @@ const extractRelativeTime = (lowerMsg) => {
  * @returns {string|null}
  */
 const extractDoctorName = (message) => {
-  const regex =
-    /(?:bác sĩ|bs|doctor)\s+((?!nào|giỏi|tốt|đâu|ở)[A-ZÀ-Ỹa-zà-ỹ\s]+)/i;
-  const match = message.match(regex);
-  if (match && match[1]) {
-    return match[1].trim();
+  // 1. Tìm vị trí của từ khóa gọi bác sĩ và lấy toàn bộ phần chữ phía sau
+  const match = message.match(/(?:bác sĩ|bs|doctor)\s+(.*)/i);
+  if (!match || !match[1]) return null;
+
+  const followingText = match[1].trim();
+
+  // 2. Danh sách "từ dừng" (Stop-words) phổ biến trong giao tiếp y tế tiếng Việt
+  const stopWords = [
+    "cho",
+    "em",
+    "tôi",
+    "ơi",
+    "có",
+    "giúp",
+    "tư",
+    "vấn",
+    "khám",
+    "xem",
+    "làm",
+    "hỏi",
+    "muốn",
+    "nào",
+    "giỏi",
+    "tốt",
+    "đâu",
+    "ở",
+    "đang",
+    "bị",
+    "anh",
+    "chị",
+    "mình",
+    "cháu",
+    "con",
+    "dạ",
+    "vậy",
+    "nhé",
+    "ạ",
+    "sao",
+  ];
+
+  // 3. Tách chuỗi thành mảng các từ (Tokenization)
+  const words = followingText.split(/\s+/);
+  const nameWords = [];
+
+  for (let word of words) {
+    // Làm sạch dấu câu ở cuối từ (vd: "Tuấn." -> "Tuấn", "hỏi," -> "hỏi")
+    const cleanWord = word.replace(/[.,!?]+$/, "").toLowerCase();
+
+    // 4. Nếu đụng phải từ giao tiếp (Stop-word), LẬP TỨC DỪNG thu thập tên
+    if (stopWords.includes(cleanWord)) {
+      break;
+    }
+
+    // Đẩy từ gốc (giữ nguyên chữ hoa/thường) vào mảng tên
+    nameWords.push(word.replace(/[.,!?]+$/, ""));
   }
+
+  const doctorName = nameWords.join(" ").trim();
+
+  // 5. Validation: Một tên người Việt Nam hợp lệ thường dài từ 1 đến 5 từ.
+  // Nếu mảng rỗng (vd: "Bác sĩ ơi"), hoặc quá dài (người dùng gõ một câu dài không chứa stop-word), ta loại bỏ.
+  if (doctorName.length > 0 && nameWords.length <= 5) {
+    return doctorName;
+  }
+
   return null;
 };
 
@@ -149,9 +208,9 @@ const extractDoctorName = (message) => {
  * @returns {string|null}
  */
 const extractStatus = (lowerMsg) => {
-  if (/đã hoàn thành|completed/.test(lowerMsg)) return 'completed';
-  if (/đã hủy|cancelled/.test(lowerMsg)) return 'cancelled';
-  if (/chờ thanh toán|pending/.test(lowerMsg)) return 'pending_payment';
-  if (/đã hoàn thành|hoàn thành|completed/.test(lowerMsg)) return 'completed';
+  if (/đã hoàn thành|completed/.test(lowerMsg)) return "completed";
+  if (/đã hủy|cancelled/.test(lowerMsg)) return "cancelled";
+  if (/chờ thanh toán|pending/.test(lowerMsg)) return "pending_payment";
+  if (/đã hoàn thành|hoàn thành|completed/.test(lowerMsg)) return "completed";
   return null;
 };

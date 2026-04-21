@@ -1,19 +1,19 @@
-import mongoose from "mongoose";
+import dns from "dns";
 import dotenv from "dotenv";
+import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
 import DoctorProfile from "../models/DoctorProfile.js";
 import Specialty from "../models/Specialty.js";
 import AiService from "../modules/Ai/ChatBot/AiService.js";
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
-
+dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 const runMigration = async () => {
   try {
-    console.log("🔄 Đang kết nối tới MongoDB Local...");
+    console.log("🔄 Đang kết nối tới MongoDB...");
     const dbUri =
       process.env.MONGO_URI ||
       process.env.MONGODB_URI ||
@@ -29,26 +29,30 @@ const runMigration = async () => {
     console.log("✅ Kết nối Database thành công!\n");
 
     // =====================================================================
-    // SỬA LỖI Ở ĐÂY: Dùng cú pháp Object truyền thẳng 'model: Specialty'
-    // để bỏ qua lỗi MissingSchemaError của Mongoose
+    // TỐI ƯU HÓA: Tìm các vector chưa có, rỗng, hoặc có kích thước sai (3072)
+    // để ép hệ thống tạo lại bằng chuẩn mới (768 chiều)
     // =====================================================================
     const doctors = await DoctorProfile.find({
-      $or: [{ embedding: { $exists: false } }, { embedding: { $size: 0 } }],
+      $or: [
+        { embedding: { $exists: false } },
+        { embedding: { $size: 0 } },
+        { embedding: { $size: 3072 } }, // Đích danh bắt các vector sai kích thước cũ
+      ],
     }).populate({
       path: "specialty",
       select: "name",
-      model: Specialty, // Ép Mongoose dùng trực tiếp model được import ở dòng 6
+      model: Specialty, // Ép Mongoose dùng trực tiếp model được import
     });
 
     if (doctors.length === 0) {
       console.log(
-        "🎉 Tuyệt vời! Toàn bộ bác sĩ đều đã có Vector. Không cần migrate.",
+        "🎉 Tuyệt vời! Toàn bộ bác sĩ đều đã có Vector chuẩn 768 chiều. Không cần migrate.",
       );
       process.exit(0);
     }
 
     console.log(
-      `⚠️ Tìm thấy ${doctors.length} bác sĩ cần mã hóa. Bắt đầu xử lý...\n`,
+      `⚠️ Tìm thấy ${doctors.length} bác sĩ cần mã hóa/cập nhật Vector. Bắt đầu xử lý...\n`,
     );
 
     let success = 0;
@@ -63,6 +67,7 @@ const runMigration = async () => {
           `⏳ Đang xử lý ID [${doc._id}] - BS ${specName}... `,
         );
 
+        // Gọi AI Service để lấy Vector (Đã được ép về 768 chiều trong file AiService.js)
         const vectorData = await AiService.generateEmbedding(contextText);
 
         if (vectorData && vectorData.length > 0) {
@@ -77,6 +82,7 @@ const runMigration = async () => {
           failed++;
         }
 
+        // Delay 1.5s để tránh vượt quá giới hạn Rate Limit của Google Gemini API
         await new Promise((res) => setTimeout(res, 1500));
       } catch (err) {
         console.log(`❌ Lỗi hệ thống: ${err.message}`);

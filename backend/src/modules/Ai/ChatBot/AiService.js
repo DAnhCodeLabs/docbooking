@@ -59,6 +59,7 @@ class AiService {
       const response = await axios.post(url, {
         model: "models/gemini-embedding-001",
         content: { parts: [{ text: text }] },
+        outputDimensionality: 768,
       });
 
       if (

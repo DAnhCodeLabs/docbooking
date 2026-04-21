@@ -6,32 +6,10 @@ import DoctorProfile from "../../../models/DoctorProfile.js";
 import Specialty from "../../../models/Specialty.js";
 import ApiError from "../../../utils/ApiError.js";
 import AiService from "./AiService.js";
-import * as patientDataService from "./patientDataService.js";
 import { parsePatientQuery } from "./intentParser.js";
+import * as patientDataService from "./patientDataService.js";
 
-// =====================================================================
-// [CORE] - THUẬT TOÁN TÍNH ĐIỂM VECTOR (COSINE SIMILARITY)
-// =====================================================================
-const calculateCosineSimilarity = (vecA, vecB) => {
-  if (
-    !vecA ||
-    !vecB ||
-    vecA.length === 0 ||
-    vecB.length === 0 ||
-    vecA.length !== vecB.length
-  )
-    return 0;
-  let dotProduct = 0,
-    normA = 0,
-    normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-};
+// ĐÃ XÓA: Hàm calculateCosineSimilarity bằng JS thuần (Giờ Atlas sẽ lo việc này)
 
 // =====================================================================
 // HÀM XỬ LÝ CHÍNH (MAIN CONTROLLER)
@@ -70,23 +48,31 @@ export const handleAiRAGQuery = async (
       else throw err;
     }
   } else {
-    // Chống chiếm đoạt Session (Anti-Hijacking)
+    // [FIX LỖI UX/LOGIC]: Chống chiếm đoạt & Chuyển giao Session mượt mà
     const isSessionGuest = !session.user;
     const isRequestGuest = !userId;
-    if (isSessionGuest !== isRequestGuest) {
+
+    if (isSessionGuest && !isRequestGuest) {
+      // Khách vừa đăng nhập -> Claim (Chiếm hữu) session này cho user đó
+      session.user = userId;
+      console.log(
+        `   -> [SESSION CLAIM]: Chuyển quyền sở hữu Session cho User ${userId}`,
+      );
+    } else if (!isSessionGuest && isRequestGuest) {
+      // Session của User mà Khách đòi chat -> Chặn (Chống xem trộm)
       console.error(
         `❌ [SECURITY ALERT]: Sai lệch trạng thái Đăng nhập. Từ chối truy cập!`,
       );
       throw new ApiError(
         StatusCodes.FORBIDDEN,
-        "Phiên làm việc không đồng bộ. Vui lòng tải lại trang.",
+        "Phiên chat thuộc về tài khoản khác. Vui lòng tải lại trang.",
       );
-    }
-    if (
+    } else if (
       session.user &&
       userId &&
       session.user.toString() !== userId.toString()
     ) {
+      // Session của User A mà User B đòi chat -> Chặn
       console.error(
         `❌ [SECURITY ALERT]: User ID không khớp chủ sở hữu Session. Từ chối truy cập!`,
       );
@@ -130,7 +116,7 @@ export const handleAiRAGQuery = async (
   const isGreeting =
     /^(chào|hi|hello|alo|hey|ai đấy|bạn là ai|bot|nexus)/i.test(
       message.trim(),
-    ) && message.split(/\s+/).length <= 6;
+    ) && message.split(/\s+/).length <= 20;
 
   // Quyết định chạy Vector
   const needsMedicalKnowledge = !isPersonalQuery && !isGreeting;
@@ -169,36 +155,88 @@ export const handleAiRAGQuery = async (
 
       if (queryVector.length > 0) {
         console.log(
-          `   -> Mã hóa thành công (768 chiều). Bắt đầu quét CSDL Bác sĩ (OOM Protected)...`,
+          `   -> Mã hóa thành công (768 chiều). Bắt đầu kích hoạt Atlas Vector Search...`,
         );
-        const doctorCursor = DoctorProfile.find({ status: "active" })
-          .populate("user", "fullName")
-          .populate("specialty", "name")
-          .populate("clinicId", "clinicName")
-          .select(
-            "user specialty clinicId customClinicName experience embedding",
-          )
-          .cursor();
 
-        let processCount = 0;
-        const validCandidates = [];
+        // [FIX NÚT THẮT HIỆU NĂNG & LỖ HỔNG AUDIT]: Dùng Atlas Vector Search Pipeline
+        const targetedDoctors = await DoctorProfile.aggregate([
+          {
+            $vectorSearch: {
+              index: "vector_index_doctor", // Tên Index vừa tạo trên Atlas
+              path: "embedding",
+              queryVector: queryVector,
+              numCandidates: 100,
+              limit: 10,
+              filter: { status: "active" }, // Lọc nhanh bác sĩ active
+            },
+          },
+          // Nối bảng Users để kiểm tra trạng thái tài khoản
+          {
+            $lookup: {
+              from: "users",
+              localField: "user",
+              foreignField: "_id",
+              as: "userDoc",
+            },
+          },
+          { $unwind: "$userDoc" },
+          // VÁ LỖ HỔNG (Audit): Chỉ lấy User không bị Ban hoặc Xóa mềm
+          {
+            $match: {
+              "userDoc.status": "active",
+              "userDoc.deactivatedAt": null,
+            },
+          },
+          // Nối bảng Specialty
+          {
+            $lookup: {
+              from: "specialties",
+              localField: "specialty",
+              foreignField: "_id",
+              as: "specialtyDoc",
+            },
+          },
+          {
+            $unwind: {
+              path: "$specialtyDoc",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          // Nối bảng ClinicLead
+          {
+            $lookup: {
+              from: "clinicleads",
+              localField: "clinicId",
+              foreignField: "_id",
+              as: "clinicDoc",
+            },
+          },
+          { $unwind: { path: "$clinicDoc", preserveNullAndEmptyArrays: true } },
+          // Lấy điểm số Vector
+          {
+            $set: { score: { $meta: "vectorSearchScore" } },
+          },
+          // Lọc theo ngưỡng tin cậy > 0.4
+          {
+            $match: { score: { $gt: 0.4 } },
+          },
+          // Chỉ lấy Top 5
+          { $limit: 5 },
+          // Định hình lại output cho giống code cũ
+          {
+            $project: {
+              experience: 1,
+              customClinicName: 1,
+              user: { fullName: "$userDoc.fullName" },
+              specialty: { name: "$specialtyDoc.name" },
+              clinicId: { clinicName: "$clinicDoc.clinicName" },
+              score: 1,
+            },
+          },
+        ]);
 
-        // Vòng lặp nhường CPU an toàn
-        for await (const doc of doctorCursor) {
-          if (++processCount % 50 === 0)
-            await new Promise((resolve) => setImmediate(resolve));
-          const score = calculateCosineSimilarity(queryVector, doc.embedding);
-          if (score > 0.4) {
-            const doctorObj = doc.toObject();
-            delete doctorObj.embedding; // Thu gom rác ngay
-            validCandidates.push({ ...doctorObj, score });
-          }
-        }
-
-        validCandidates.sort((a, b) => b.score - a.score);
-        const targetedDoctors = validCandidates.slice(0, 5);
         console.log(
-          `   -> Đã quét qua ${processCount} bác sĩ. Tìm thấy ${targetedDoctors.length} ứng viên phù hợp (>0.4).`,
+          `   -> Tìm thấy ${targetedDoctors.length} ứng viên phù hợp bằng Atlas Vector Search.`,
         );
 
         if (targetedDoctors.length > 0) {
@@ -217,7 +255,7 @@ export const handleAiRAGQuery = async (
         }
       }
 
-      // Quét Phòng khám theo địa lý
+      // Quét Phòng khám theo địa lý (LOGIC CŨ GIỮ NGUYÊN)
       const isHanoi = /hà nội|hn|cầu giấy|đống đa/i.test(lowerMsg);
       const isHCM = /hồ chí minh|hcm|sài gòn|quận 1|quận 3|tân bình/i.test(
         lowerMsg,
@@ -244,7 +282,7 @@ export const handleAiRAGQuery = async (
     }
   }
 
-  // 3.2. LUỒNG DỮ LIỆU CÁ NHÂN
+  // 3.2. LUỒNG DỮ LIỆU CÁ NHÂN (LOGIC CŨ GIỮ NGUYÊN)
   if (userId && isPersonalQuery) {
     console.log(
       `🗄️ [PRIVATE DATA]: Đang trích xuất dữ liệu Y tế & Lịch khám của người dùng...`,
@@ -351,8 +389,18 @@ ${privateContext}
 [CÂU HỎI THỰC SỰ CỦA NGƯỜI DÙNG]:
 ${message}`;
 
-  normalizedMessages[normalizedMessages.length - 1].content[0].text =
-    SYSTEM_INSTRUCTION;
+  // [FIX LỖI CRASH PROMPT]: Đảm bảo an toàn khi nhồi System Instruction
+  if (normalizedMessages.length > 0) {
+    const lastIndex = normalizedMessages.length - 1;
+    if (normalizedMessages[lastIndex].role === "user") {
+      normalizedMessages[lastIndex].content[0].text = SYSTEM_INSTRUCTION;
+    } else {
+      normalizedMessages.push({
+        role: "user",
+        content: [{ text: SYSTEM_INSTRUCTION }],
+      });
+    }
+  }
 
   console.log(
     `🧠 [TRÍ NHỚ AI]: Đã chuẩn hóa thành ${normalizedMessages.length} luồng (User/Assistant). Gửi Prompt sang Python...`,

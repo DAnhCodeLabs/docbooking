@@ -11,12 +11,16 @@ const messageSchema = new mongoose.Schema({
       text: { type: String, required: true },
     },
   ],
+  // [NEW]: Lưu trữ trạng thái nén (ví dụ: "Đã tư vấn BS Tuấn, khoa Thần kinh")
+  metadata: {
+    type: String,
+    default: null,
+  },
   timestamp: { type: Date, default: Date.now },
 });
 
 const chatSessionSchema = new mongoose.Schema(
   {
-    // Nếu User đã đăng nhập, liên kết với bảng User. Nếu chưa, dùng sessionId dạng chuỗi.
     user: {
       type: mongoose.Schema.ObjectId,
       ref: "User",
@@ -26,7 +30,7 @@ const chatSessionSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      index: true, // Đánh index để truy vấn cực nhanh
+      index: true,
     },
     messages: [messageSchema],
     status: {
@@ -36,10 +40,9 @@ const chatSessionSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: true, // Tự động có createdAt, updatedAt
+    timestamps: true,
   },
 );
-
 
 chatSessionSchema.index(
   { updatedAt: 1 },

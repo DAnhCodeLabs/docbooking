@@ -1,12 +1,13 @@
-import { useAuthStore } from '@/stores/authStore';
-import { showError } from '@/utils/toast';
-import axios from 'axios';
+import { useAuthStore } from "@/stores/authStore";
+import { showError } from "@/utils/toast";
+import axios from "axios";
 
 const axiosClient = axios.create({
-  baseURL: '/api', // ← Quan trọng: dùng tương đối → Vite proxy xử lý
+  baseURL: "/api",
+  // Giữ nguyên 30s cho các API thông thường (Login, Load dữ liệu...)
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
   withCredentials: true,
 });
@@ -16,28 +17,41 @@ axiosClient.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().accessToken;
     if (token) config.headers.Authorization = `Bearer ${token}`;
+
+    // [BẢN VÁ LỖI AI TIMEOUT]: Tắt đếm ngược thời gian chờ đối với luồng Chat AI
+    // Nếu URL là API chatbot, cho phép trình duyệt chờ vô cực (0)
+    if (config.url && config.url.includes("/chatbot")) {
+      config.timeout = 0;
+    }
+
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
-// Response interceptor (đã sửa refresh token dùng tương đối)
+// Response interceptor
 axiosClient.interceptors.response.use(
   (response) => response.data,
   async (error) => {
     const originalRequest = error.config;
 
+    // Kiểm tra lỗi Timeout của chính Axios sinh ra
+    if (error.code === "ECONNABORTED") {
+      showError("Kết nối quá hạn. Vui lòng thử lại.");
+      return Promise.reject({ success: false, message: "Request timeout" });
+    }
+
     if (!error.response) {
       showError(
-        'Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.'
+        "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.",
       );
-      return Promise.reject({ success: false, message: 'Network error' });
+      return Promise.reject({ success: false, message: "Network error" });
     }
 
     const { status, data } = error.response;
-    const isLoginRequest = originalRequest.url.includes('/auth/login');
+    const isLoginRequest = originalRequest.url.includes("/auth/login");
     const isRefreshRequest = originalRequest.url.includes(
-      '/auth/refresh-token'
+      "/auth/refresh-token",
     );
 
     if (
@@ -49,17 +63,15 @@ axiosClient.interceptors.response.use(
       originalRequest._retry = true;
       try {
         const response = await axios.post(
-          '/auth/refresh-token',
+          "/auth/refresh-token",
           {},
-          { withCredentials: true }
+          { withCredentials: true },
         );
 
-        // ✅ FIX: Lấy đúng path từ response wrapper
         const newAccessToken = response.data?.data?.accessToken;
 
-        // ✅ SAFETY: Kiểm tra access token tồn tại trước update
         if (!newAccessToken) {
-          throw new Error('Không nhận được access token từ server.');
+          throw new Error("Không nhận được access token từ server.");
         }
 
         useAuthStore.getState().updateAccessToken(newAccessToken);
@@ -67,15 +79,13 @@ axiosClient.interceptors.response.use(
         return axiosClient(originalRequest);
       } catch (refreshError) {
         useAuthStore.getState().logout();
-        showError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        showError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
         return Promise.reject(refreshError);
       }
     }
     if (isLoginRequest && status === 401) {
-      // 401 từ login = credential sai, KHÔNG phải session expired
-      // KHÔNG logout vì user chưa đăng nhập
       const errorMessage =
-        data?.message || 'Email hoặc mật khẩu không chính xác.';
+        data?.message || "Email hoặc mật khẩu không chính xác.";
       showError(errorMessage);
       return Promise.reject({
         success: false,
@@ -86,35 +96,31 @@ axiosClient.interceptors.response.use(
     }
 
     if (isRefreshRequest && status === 401) {
-      // 401 từ refresh token = session hết hạn, CẦN logout
       useAuthStore.getState().logout();
-      showError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      showError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
       return Promise.reject({
         success: false,
-        message: 'Phiên đăng nhập đã hết hạn.',
+        message: "Phiên đăng nhập đã hết hạn.",
         data: data,
         status: status,
       });
     }
 
-    // Xử lý 429 - Too Many Requests
     const buildErrorResponse = (status, data) => ({
       success: false,
-      message: data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.',
+      message: data?.message || "Có lỗi xảy ra. Vui lòng thử lại.",
       data: data,
       status: status,
     });
 
-    // Xử lý 429 - Too Many Requests
     if (status === 429) {
       const errorMessage =
-        data?.message || 'Quá nhiều yêu cầu. Vui lòng thử lại sau.';
+        data?.message || "Quá nhiều yêu cầu. Vui lòng thử lại sau.";
       showError(errorMessage);
-      return Promise.reject(buildErrorResponse(status, data)); // ✅ Consistent
+      return Promise.reject(buildErrorResponse(status, data));
     }
 
-    // Các lỗi khác (bao gồm 401 từ request login)
-    const errorMessage = data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.';
+    const errorMessage = data?.message || "Có lỗi xảy ra. Vui lòng thử lại.";
     showError(errorMessage);
 
     return Promise.reject({
@@ -122,8 +128,8 @@ axiosClient.interceptors.response.use(
       message: errorMessage,
       data: data,
       status: status,
-    }); //
-  }
+    });
+  },
 );
 
 export default axiosClient;

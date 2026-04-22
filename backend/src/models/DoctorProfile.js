@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import AiService from "../modules/Ai/ChatBot/AiService.js";
-// Schema bằng cấp (giữ nguyên)
+
 const qualificationSchema = new mongoose.Schema(
   {
     degree: String,
@@ -10,7 +10,6 @@ const qualificationSchema = new mongoose.Schema(
   { _id: false },
 );
 
-// Schema cho giấy tờ hành nghề (chứng chỉ, bằng cấp dạng file)
 const documentSchema = new mongoose.Schema(
   {
     name: String,
@@ -20,7 +19,6 @@ const documentSchema = new mongoose.Schema(
   { _id: false },
 );
 
-// Schema cho ảnh hoạt động (thêm mới)
 const activityImageSchema = new mongoose.Schema(
   {
     url: String,
@@ -60,8 +58,8 @@ const doctorProfileSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    documents: [documentSchema], // giấy tờ hành nghề
-    activityImages: [activityImageSchema], // ẢNH HOẠT ĐỘNG (thêm mới)
+    documents: [documentSchema],
+    activityImages: [activityImageSchema],
 
     status: {
       type: String,
@@ -97,7 +95,11 @@ const doctorProfileSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    embedding: { type: [Number], default: [] },
+    // [BẢN VÁ P1]: Bỏ default: [] để tận dụng Sparse Indexing của MongoDB Atlas
+    embedding: {
+      type: [Number],
+      default: undefined,
+    },
   },
   {
     timestamps: true,
@@ -105,7 +107,6 @@ const doctorProfileSchema = new mongoose.Schema(
 );
 
 doctorProfileSchema.pre("save", async function (next) {
-  // Chỉ gọi AI nếu có sự thay đổi về chuyên môn để tiết kiệm API
   if (
     this.isModified("bio") ||
     this.isModified("experience") ||
@@ -113,7 +114,6 @@ doctorProfileSchema.pre("save", async function (next) {
     this.isNew
   ) {
     try {
-      // 1. Lấy tên chuyên khoa (tránh lỗi null nếu chuyên khoa chưa có)
       let specName = "Đa khoa";
       if (this.specialty) {
         const specialtyDoc = await mongoose
@@ -123,20 +123,24 @@ doctorProfileSchema.pre("save", async function (next) {
         if (specialtyDoc) specName = specialtyDoc.name;
       }
 
-      // 2. Gom chữ thành Context sắc nét
       const textToEmbed = `Bác sĩ chuyên khoa ${specName}. Kinh nghiệm thực tế ${this.experience} năm. Thông tin chuyên môn và điều trị: ${this.bio || "Không có"}`;
 
-      // 3. Xin tọa độ từ AI
       const vectorData = await AiService.generateEmbedding(textToEmbed);
-      if (vectorData.length > 0) {
+
+      // [BẢN VÁ P1]: Kiểm tra nghiêm ngặt, đảm bảo chính xác 768 chiều của Gemini
+      if (vectorData && vectorData.length === 768) {
         this.embedding = vectorData;
+      } else {
+        // Hủy field nếu lỗi, Atlas sẽ bỏ qua document này thay vì crash
+        this.embedding = undefined;
       }
     } catch (error) {
       console.error(
-        `⚠️ Lỗi Mongoose Hook (Bác sĩ ID: ${this._id}):`,
+        `⚠️ Lỗi Mongoose Hook AI (Bác sĩ ID: ${this._id}):`,
         error.message,
       );
-      // Vẫn gọi next() để DB lưu được text, đảm bảo luồng Admin không bị treo
+      // [BẢN VÁ P1]: Đảm bảo an toàn tuyệt đối khi bắt catch
+      this.embedding = undefined;
     }
   }
   next();

@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 import uuid
 
+# [BẢN VÁ P0]: Khai báo Enum SYSTEM để đón dữ liệu từ Node.js
 class Role(str, Enum):
     SYSTEM = "system"
     USER = "user"
@@ -17,7 +18,7 @@ class UniversalMessage(BaseModel):
 
 class UniversalRequest(BaseModel):
     # Model có thể để trống, nếu trống Engine sẽ dùng mặc định trong config
-    model: Optional[str] = None 
+    model: Optional[str] = None
     messages: List[UniversalMessage]
     temperature: float = 0.7
     provider_overrides: Dict[str, Any] = Field(default_factory=dict)

@@ -123,15 +123,24 @@ doctorProfileSchema.pre("save", async function (next) {
         if (specialtyDoc) specName = specialtyDoc.name;
       }
 
-      const textToEmbed = `Bác sĩ chuyên khoa ${specName}. Kinh nghiệm thực tế ${this.experience} năm. Thông tin chuyên môn và điều trị: ${this.bio || "Không có"}`;
+      // [BẢN VÁ P2]: Lấy thêm tên Bác sĩ để nhúng vào Vector, giúp AI tìm đúng tên
+      let doctorName = "Chưa rõ";
+      if (this.user) {
+        const userDoc = await mongoose
+          .model("User")
+          .findById(this.user)
+          .select("fullName");
+        if (userDoc) doctorName = userDoc.fullName;
+      }
+
+      // Đã đưa ${doctorName} vào chuỗi Embedding
+      const textToEmbed = `Bác sĩ ${doctorName}, chuyên khoa ${specName}. Kinh nghiệm thực tế ${this.experience} năm. Thông tin chuyên môn và điều trị: ${this.bio || "Không có"}`;
 
       const vectorData = await AiService.generateEmbedding(textToEmbed);
 
-      // [BẢN VÁ P1]: Kiểm tra nghiêm ngặt, đảm bảo chính xác 768 chiều của Gemini
       if (vectorData && vectorData.length === 768) {
         this.embedding = vectorData;
       } else {
-        // Hủy field nếu lỗi, Atlas sẽ bỏ qua document này thay vì crash
         this.embedding = undefined;
       }
     } catch (error) {
@@ -139,7 +148,6 @@ doctorProfileSchema.pre("save", async function (next) {
         `⚠️ Lỗi Mongoose Hook AI (Bác sĩ ID: ${this._id}):`,
         error.message,
       );
-      // [BẢN VÁ P1]: Đảm bảo an toàn tuyệt đối khi bắt catch
       this.embedding = undefined;
     }
   }

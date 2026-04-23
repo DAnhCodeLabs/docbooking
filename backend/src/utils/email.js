@@ -1,13 +1,13 @@
-import nodemailer from 'nodemailer';
-import logger from './logger.js';
-import { generatePDFFromHTML } from './pdf.js';
-import { generatePrescriptionHTML } from './prescriptionTemplate.js';
+import nodemailer from "nodemailer";
+import logger from "./logger.js";
+import { generatePDFFromHTML } from "./pdf.js";
+import { generatePrescriptionHTML } from "./prescriptionTemplate.js";
 
 const createTransporter = () => {
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: process.env.EMAIL_PORT,
-    secure: process.env.EMAIL_SECURE === 'true',
+    secure: process.env.EMAIL_SECURE === "true",
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
@@ -44,12 +44,12 @@ export const sendEmail = async (to, subject, html, attachments = []) => {
  * @returns {string} - Chuỗi HTML hoàn chỉnh
  */
 const generateBaseTemplate = (title, content) => {
-  const primaryColor = process.env.EMAIL_PRIMARY_COLOR || '#0066cc';
-  const secondaryColor = '#2c3e50';
-  const bgColor = '#f4f7f6';
-  const textColor = '#333333';
-  const footerBg = '#f8f9fa';
-  const borderColor = '#e9ecef';
+  const primaryColor = process.env.EMAIL_PRIMARY_COLOR || "#0066cc";
+  const secondaryColor = "#2c3e50";
+  const bgColor = "#f4f7f6";
+  const textColor = "#333333";
+  const footerBg = "#f8f9fa";
+  const borderColor = "#e9ecef";
 
   // CSS inline + media queries
   return `<!DOCTYPE html>
@@ -128,14 +128,14 @@ const generateBaseTemplate = (title, content) => {
 // ============================================================================
 
 export const sendVerificationOtp = async (to, otp) => {
-  const subject = 'Mã Xác Thực Đăng Ký Tài Khoản';
-  const title = 'Xác Thực Địa Chỉ Email';
+  const subject = "Mã Xác Thực Đăng Ký Tài Khoản";
+  const title = "Xác Thực Địa Chỉ Email";
 
   const content = `
     <p>Xin chào,</p>
     <p>Cảm ơn bạn đã đăng ký tài khoản tại <strong>Hệ thống Đặt Lịch Khám Bệnh</strong>. Vui lòng sử dụng mã xác thực dưới đây để hoàn tất đăng ký:</p>
-    <div style="background-color:#f0f7ff; border:1px dashed ${process.env.EMAIL_PRIMARY_COLOR || '#0066cc'}; border-radius:12px; padding:20px; text-align:center; margin:24px 0;">
-      <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:${process.env.EMAIL_PRIMARY_COLOR || '#0066cc'};">${otp}</span>
+    <div style="background-color:#f0f7ff; border:1px dashed ${process.env.EMAIL_PRIMARY_COLOR || "#0066cc"}; border-radius:12px; padding:20px; text-align:center; margin:24px 0;">
+      <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:${process.env.EMAIL_PRIMARY_COLOR || "#0066cc"};">${otp}</span>
     </div>
     <p style="margin-bottom:4px;"><strong>Lưu ý quan trọng:</strong></p>
     <ul style="margin-top:0; padding-left:20px;">
@@ -151,8 +151,8 @@ export const sendVerificationOtp = async (to, otp) => {
 };
 
 export const sendPasswordResetOtp = async (to, otp) => {
-  const subject = 'Mã Xác Thực Đặt Lại Mật Khẩu';
-  const title = 'Yêu Cầu Đặt Lại Mật Khẩu';
+  const subject = "Mã Xác Thực Đặt Lại Mật Khẩu";
+  const title = "Yêu Cầu Đặt Lại Mật Khẩu";
 
   const content = `
     <p>Xin chào,</p>
@@ -171,15 +171,15 @@ export const sendPasswordResetOtp = async (to, otp) => {
 };
 
 export const sendDoctorApprovalEmail = async (email, plainPassword) => {
-  const subject = 'Chúc mừng! Hồ sơ đối tác của bạn đã được duyệt';
-  const title = 'Chào Mừng Gia Nhập Hệ Thống';
-  const resetLink = `${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/forgot-password`;
+  const subject = "Chúc mừng! Hồ sơ đối tác của bạn đã được duyệt";
+  const title = "Chào Mừng Gia Nhập Hệ Thống";
+  const resetLink = `${process.env.CLIENT_URL || "http://localhost:3000"}/auth/forgot-password`;
 
   const content = `
     <p>Xin chào Bác sĩ,</p>
     <p>Hồ sơ đăng ký hành nghề của bạn đã được duyệt và kích hoạt trên hệ thống.</p>
     <p>Hệ thống đã cấp cho bạn tài khoản:</p>
-    <div style="background-color:#f8f9fa; border-left:4px solid ${process.env.EMAIL_PRIMARY_COLOR || '#0066cc'}; padding:16px; margin:20px 0;">
+    <div style="background-color:#f8f9fa; border-left:4px solid ${process.env.EMAIL_PRIMARY_COLOR || "#0066cc"}; padding:16px; margin:20px 0;">
       <p style="margin:0 0 8px 0;"><strong>Email đăng nhập:</strong> ${email}</p>
       <p style="margin:0;"><strong>Mật khẩu tạm thời:</strong> <code style="background:#e9ecef; padding:2px 6px; border-radius:4px;">${plainPassword}</code></p>
     </div>
@@ -198,8 +198,8 @@ export const sendDoctorApprovalEmail = async (email, plainPassword) => {
 };
 
 export const sendDoctorRejectionEmail = async (email, reason) => {
-  const subject = 'Thông báo: Yêu cầu bổ sung hồ sơ đối tác';
-  const title = 'Thông Báo Cập Nhật Hồ Sơ';
+  const subject = "Thông báo: Yêu cầu bổ sung hồ sơ đối tác";
+  const title = "Thông Báo Cập Nhật Hồ Sơ";
 
   const content = `
     <p>Xin chào Bác sĩ,</p>
@@ -217,13 +217,13 @@ export const sendDoctorRejectionEmail = async (email, reason) => {
 };
 
 export const sendClinicAdminCredentials = async (email, password) => {
-  const subject = 'Tài khoản quản lý phòng khám trên DocGo';
-  const title = 'Chào mừng bạn đến với DocGo!';
+  const subject = "Tài khoản quản lý phòng khám trên DocGo";
+  const title = "Chào mừng bạn đến với DocGo!";
 
   const content = `
     <p>Xin chào,</p>
     <p>Tài khoản quản lý phòng khám của bạn đã được tạo thành công.</p>
-    <div style="background-color:#f8f9fa; border-left:4px solid ${process.env.EMAIL_PRIMARY_COLOR || '#0066cc'}; padding:16px; margin:20px 0;">
+    <div style="background-color:#f8f9fa; border-left:4px solid ${process.env.EMAIL_PRIMARY_COLOR || "#0066cc"}; padding:16px; margin:20px 0;">
       <p style="margin:0 0 8px 0;"><strong>Email đăng nhập:</strong> ${email}</p>
       <p style="margin:0;"><strong>Mật khẩu tạm thời:</strong> <code style="background:#e9ecef; padding:2px 6px; border-radius:4px;">${password}</code></p>
     </div>
@@ -241,10 +241,10 @@ export const sendClinicAdminCredentials = async (email, password) => {
 export const sendDoctorClinicApproved = async (
   email,
   doctorName,
-  clinicName
+  clinicName,
 ) => {
-  const subject = 'Hồ sơ bác sĩ đã được phòng khám xác nhận';
-  const title = 'Xác nhận từ phòng khám';
+  const subject = "Hồ sơ bác sĩ đã được phòng khám xác nhận";
+  const title = "Xác nhận từ phòng khám";
 
   const content = `
     <p>Xin chào Bác sĩ ${doctorName},</p>
@@ -258,16 +258,16 @@ export const sendDoctorClinicApproved = async (
 };
 
 export const sendAppointmentConfirmation = async (to, appointmentData) => {
-  const subject = 'Xác nhận đặt lịch khám';
-  const title = 'Đặt lịch thành công';
+  const subject = "Xác nhận đặt lịch khám";
+  const title = "Đặt lịch thành công";
 
   let qrBuffer = null;
   if (
     appointmentData.qrCodeUrl &&
-    appointmentData.qrCodeUrl.startsWith('data:image/png;base64,')
+    appointmentData.qrCodeUrl.startsWith("data:image/png;base64,")
   ) {
-    const base64Data = appointmentData.qrCodeUrl.split(',')[1];
-    qrBuffer = Buffer.from(base64Data, 'base64');
+    const base64Data = appointmentData.qrCodeUrl.split(",")[1];
+    qrBuffer = Buffer.from(base64Data, "base64");
   }
 
   const content = `
@@ -275,7 +275,7 @@ export const sendAppointmentConfirmation = async (to, appointmentData) => {
     <p>Bạn đã đặt lịch khám với <strong>${appointmentData.doctorName}</strong> thành công.</p>
     <p><strong>Thông tin chi tiết:</strong></p>
     <ul>
-      <li>Ngày khám: ${new Date(appointmentData.date).toLocaleDateString('vi-VN')}</li>
+      <li>Ngày khám: ${new Date(appointmentData.date).toLocaleDateString("vi-VN")}</li>
       <li>Giờ khám: ${appointmentData.time}</li>
       <li>Bác sĩ: ${appointmentData.doctorName}</li>
     </ul>
@@ -289,20 +289,20 @@ export const sendAppointmentConfirmation = async (to, appointmentData) => {
 
   const html = generateBaseTemplate(title, content);
   const attachments = qrBuffer
-    ? [{ filename: 'qrcode.png', content: qrBuffer, cid: 'qrcode' }]
+    ? [{ filename: "qrcode.png", content: qrBuffer, cid: "qrcode" }]
     : [];
 
   await sendEmail(to, subject, html, attachments);
 };
 
 export const sendRefundNotification = async (to, data) => {
-  const subject = 'Thông báo hủy lịch khám';
-  const title = 'Xác nhận hủy lịch hẹn';
+  const subject = "Thông báo hủy lịch khám";
+  const title = "Xác nhận hủy lịch hẹn";
 
   const content = `
     <p>Xin chào <strong>${data.patientName}</strong>,</p>
-    <p>Lịch khám với <strong>${data.doctorName}</strong> vào lúc <strong>${data.time}</strong> ngày <strong>${new Date(data.date).toLocaleDateString('vi-VN')}</strong> đã được hủy thành công.</p>
-    ${data.refundAmount > 0 ? `<p>Số tiền hoàn lại: <strong>${data.refundAmount.toLocaleString()} VNĐ</strong> sẽ được trả về tài khoản của bạn trong vòng 3-5 ngày làm việc.</p>` : '<p>Do hủy lịch, bạn không được hoàn tiền.</p>'}
+    <p>Lịch khám với <strong>${data.doctorName}</strong> vào lúc <strong>${data.time}</strong> ngày <strong>${new Date(data.date).toLocaleDateString("vi-VN")}</strong> đã được hủy thành công.</p>
+    ${data.refundAmount > 0 ? `<p>Số tiền hoàn lại: <strong>${data.refundAmount.toLocaleString()} VNĐ</strong> sẽ được trả về tài khoản của bạn trong vòng 3-5 ngày làm việc.</p>` : "<p>Do hủy lịch, bạn không được hoàn tiền.</p>"}
     <p>Lý do hủy: ${data.reason}</p>
     <p>Trân trọng,<br><strong>Đội ngũ DocGo</strong></p>
   `;
@@ -314,25 +314,25 @@ export const sendRefundNotification = async (to, data) => {
 export const sendPrescriptionEmail = async (appointmentId, consultationId) => {
   try {
     // 1. Lấy dữ liệu đầy đủ
-    const mongoose = (await import('mongoose')).default;
-    const Appointment = (await import('../models/Appointment.js')).default;
+    const mongoose = (await import("mongoose")).default;
+    const Appointment = (await import("../models/Appointment.js")).default;
     const MedicalConsultation = (
-      await import('../models/MedicalConsultation.js')
+      await import("../models/MedicalConsultation.js")
     ).default;
-    const User = (await import('../models/User.js')).default;
+    const User = (await import("../models/User.js")).default;
 
     const appointment = await Appointment.findById(appointmentId)
-      .populate('doctor', 'fullName specialty')
-      .populate('patientId', 'fullName email phone')
+      .populate("doctor", "fullName specialty")
+      .populate("patientProfile", "fullName email phone")
       .populate({
-        path: 'slot',
-        populate: { path: 'scheduleId', select: 'date' },
+        path: "slot",
+        populate: { path: "scheduleId", select: "date" },
       })
       .lean();
 
     if (!appointment) {
       console.error(
-        `Không tìm thấy appointment ${appointmentId} để gửi đơn thuốc`
+        `Không tìm thấy appointment ${appointmentId} để gửi đơn thuốc`,
       );
       return;
     }
@@ -345,10 +345,34 @@ export const sendPrescriptionEmail = async (appointmentId, consultationId) => {
     }
 
     const user = await User.findById(appointment.bookingUser)
-      .select('email fullName')
+      .select("email fullName")
       .lean();
     if (!user?.email) {
       console.warn(`Không có email cho user ${appointment.bookingUser}`);
+      return;
+    }
+
+    // Kiểm tra populated fields
+    if (!appointment.doctor) {
+      console.warn(
+        `Không có thông tin doctor cho appointment ${appointmentId}`,
+      );
+      return;
+    }
+    if (!appointment.patientProfile) {
+      console.warn(
+        `Không có thông tin patientProfile cho appointment ${appointmentId}`,
+      );
+      return;
+    }
+    if (!appointment.slot) {
+      console.warn(`Không có thông tin slot cho appointment ${appointmentId}`);
+      return;
+    }
+    if (!appointment.slot.scheduleId) {
+      console.warn(
+        `Không có thông tin scheduleId cho appointment ${appointmentId}`,
+      );
       return;
     }
 
@@ -357,22 +381,22 @@ export const sendPrescriptionEmail = async (appointmentId, consultationId) => {
     const pdfBuffer = await generatePDFFromHTML(html);
 
     // 3. Xây dựng nội dung email chi tiết, chuyên nghiệp
-    const subject = '📄 Kết quả khám bệnh và đơn thuốc điện tử';
-    const title = 'Hoàn thành khám bệnh';
+    const subject = "📄 Kết quả khám bệnh và đơn thuốc điện tử";
+    const title = "Hoàn thành khám bệnh";
 
     // Helper định dạng ngày giờ
-    const formatDate = (date) => new Date(date).toLocaleDateString('vi-VN');
-    const formatTime = (timeStr) => timeStr || '---';
+    const formatDate = (date) => new Date(date).toLocaleDateString("vi-VN");
+    const formatTime = (timeStr) => timeStr || "---";
 
-    const doctorName = appointment.doctor?.fullName || 'Bác sĩ';
-    const clinicName = appointment.clinicId?.name || 'Cơ sở y tế';
+    const doctorName = appointment.doctor?.fullName || "Bác sĩ";
+    const clinicName = "Cơ sở y tế"; // Appointment schema không chứa clinicId
     const appointmentDate = appointment.slot?.scheduleId?.date
       ? formatDate(appointment.slot.scheduleId.date)
       : formatDate(appointment.completedAt || new Date());
     const appointmentTime = `${formatTime(appointment.slot?.startTime)} - ${formatTime(appointment.slot?.endTime)}`;
 
     const content = `
-      <p style="margin-bottom: 20px;">Xin chào <strong>${user.fullName || 'Quý khách'}</strong>,</p>
+      <p style="margin-bottom: 20px;">Xin chào <strong>${user.fullName || "Quý khách"}</strong>,</p>
 
       <div style="background: #f0f9ff; border-radius: 16px; padding: 20px; margin: 20px 0;">
         <p style="margin: 0 0 8px 0;"><strong>🧑‍⚕️ Bác sĩ thực hiện:</strong> ${doctorName}</p>
@@ -406,17 +430,17 @@ export const sendPrescriptionEmail = async (appointmentId, consultationId) => {
       {
         filename: `Don_thuoc_${appointmentId.slice(-6)}.pdf`,
         content: pdfBuffer,
-        contentType: 'application/pdf',
+        contentType: "application/pdf",
       },
     ]);
 
     console.log(
-      `Đã gửi đơn thuốc PDF cho appointment ${appointmentId} đến ${user.email}`
+      `Đã gửi đơn thuốc PDF cho appointment ${appointmentId} đến ${user.email}`,
     );
   } catch (error) {
     console.error(
       `Lỗi gửi email đơn thuốc cho appointment ${appointmentId}:`,
-      error
+      error,
     );
     // Không throw lỗi để không ảnh hưởng đến việc hoàn thành ca khám
   }

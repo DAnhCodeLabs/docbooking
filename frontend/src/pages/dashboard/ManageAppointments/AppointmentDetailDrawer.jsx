@@ -19,6 +19,24 @@ const statusMap = {
 const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
   if (!appointment) return null;
 
+  // Defensive checks for patient data
+  const patientData = appointment.patientId || appointment.patientProfile;
+  const patientName = patientData?.fullName || "Chưa cập nhật";
+  const patientPhone = patientData?.phone || "N/A";
+  const patientCCCD = patientData?.cccd || "Chưa cập nhật";
+
+  // Defensive checks for doctor data
+  const doctorData = appointment.doctor || {};
+  const doctorName = doctorData?.fullName || "Chưa cập nhật";
+  const doctorSpecialty = doctorData?.specialty?.name || "N/A";
+  const doctorClinic = doctorData?.clinicName || "N/A";
+
+  // Defensive checks for slot data
+  const slotData = appointment.slot || {};
+  const scheduleDate = slotData?.scheduleId?.date;
+  const slotStartTime = slotData?.startTime || "N/A";
+  const slotEndTime = slotData?.endTime || "N/A";
+
   return (
     <Drawer
       title={
@@ -45,7 +63,7 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
               Bệnh nhân
             </div>
             <Title level={4} className="m-0! text-gray-800!">
-              {appointment.patientId.fullName}
+              {patientName}
             </Title>
           </div>
         </div>
@@ -76,17 +94,13 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
           <div className="flex flex-col gap-3">
             <div>
               <span className="text-xs text-gray-500 block">Số điện thoại</span>
-              <span className="font-medium text-gray-800">
-                {appointment.patientId.phone || "N/A"}
-              </span>
+              <span className="font-medium text-gray-800">{patientPhone}</span>
             </div>
             <div>
               <span className="text-xs text-gray-500 block">
                 CCCD / Định danh
               </span>
-              <span className="font-medium text-gray-800">
-                {appointment.patientId.cccd || "Chưa cập nhật"}
-              </span>
+              <span className="font-medium text-gray-800">{patientCCCD}</span>
             </div>
           </div>
         </Card>
@@ -107,17 +121,14 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
               <span className="text-xs text-gray-500 block">
                 Bác sĩ phụ trách
               </span>
-              <span className="font-medium text-blue-600">
-                {appointment.doctor.fullName}
-              </span>
+              <span className="font-medium text-blue-600">{doctorName}</span>
             </div>
             <div>
               <span className="text-xs text-gray-500 block">
                 Chuyên khoa & Cơ sở
               </span>
               <span className="font-medium text-gray-800">
-                {appointment.doctor?.specialty?.name || "N/A"} -{" "}
-                {appointment.doctor?.clinicName || "N/A"}
+                {doctorSpecialty} - {doctorClinic}
               </span>
             </div>
             {/* Thêm thông tin thanh toán */}
@@ -173,7 +184,7 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
               Ngày hẹn
             </span>
             <span className="font-semibold text-gray-800 whitespace-nowrap text-base">
-              {formatDateUTC(appointment.slot.scheduleId.date)}
+              {scheduleDate ? formatDateUTC(scheduleDate) : "Chưa cập nhật"}
             </span>
           </div>
 
@@ -183,7 +194,7 @@ const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
               Giờ khám
             </span>
             <span className="font-semibold text-gray-800 whitespace-nowrap text-base">
-              {appointment.slot.startTime} - {appointment.slot.endTime}
+              {slotStartTime} - {slotEndTime}
             </span>
           </div>
         </div>

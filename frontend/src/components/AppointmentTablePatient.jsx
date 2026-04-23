@@ -1,4 +1,4 @@
-import { formatDateUTC } from '@/utils/date';
+import { formatDateUTC } from "@/utils/date";
 import {
   CalendarOutlined,
   ClockCircleOutlined,
@@ -7,7 +7,7 @@ import {
   TeamOutlined,
   UserOutlined,
   WalletOutlined,
-} from '@ant-design/icons';
+} from "@ant-design/icons";
 import {
   Avatar,
   Button,
@@ -20,9 +20,9 @@ import {
   Table,
   Tag,
   Typography,
-} from 'antd';
-import dayjs from 'dayjs';
-import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
+} from "antd";
+import dayjs from "dayjs";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 
 dayjs.extend(isSameOrAfter);
 const { Text } = Typography;
@@ -41,55 +41,55 @@ const AppointmentTablePatient = ({
 }) => {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
-  const today = dayjs().startOf('day');
+  const today = dayjs().startOf("day");
 
   const canCancel = (record) => {
     const appointmentDate =
       record.scheduleInfo?.date || record.slot?.scheduleId?.date;
     return (
-      record.status === 'confirmed' &&
+      record.status === "confirmed" &&
       appointmentDate &&
-      dayjs(appointmentDate).isSameOrAfter(today, 'day')
+      dayjs(appointmentDate).isSameOrAfter(today, "day")
     );
   };
 
   const PaymentTags = ({ method, status }) => (
     <Space size="small" className="flex! flex-wrap! gap-2!">
       <Tag
-        color={method === 'online' ? 'blue' : 'default'}
+        color={method === "online" ? "blue" : "default"}
         className="m-0! rounded-md! px-2.5! py-0.5! text-xs! border-0! flex! items-center! gap-1.5! font-medium!"
       >
-        {method === 'online' ? (
+        {method === "online" ? (
           <CreditCardOutlined className="text-[11px]!" />
         ) : (
           <WalletOutlined className="text-[11px]!" />
         )}
-        {method === 'online' ? 'Trực tuyến' : 'Tại quầy'}
+        {method === "online" ? "Trực tuyến" : "Tại quầy"}
       </Tag>
       <Tag
         className={`m-0! rounded-md! px-2.5! py-0.5! text-xs! border-0! font-semibold! ${
-          status === 'paid'
-            ? 'bg-emerald-50! text-emerald-600!'
-            : status === 'failed'
-              ? 'bg-rose-50! text-rose-600!'
-              : 'bg-amber-50! text-amber-600!'
+          status === "paid"
+            ? "bg-emerald-50! text-emerald-600!"
+            : status === "failed"
+              ? "bg-rose-50! text-rose-600!"
+              : "bg-amber-50! text-amber-600!"
         }`}
       >
-        {status === 'paid'
-          ? 'Đã thanh toán'
-          : status === 'failed'
-            ? 'Thất bại'
-            : 'Chưa T.Toán'}
+        {status === "paid"
+          ? "Đã thanh toán"
+          : status === "failed"
+            ? "Thất bại"
+            : "Chưa T.Toán"}
       </Tag>
     </Space>
   );
 
   const columns = [
     {
-      title: 'Mã/STT',
-      key: 'index',
+      title: "Mã/STT",
+      key: "index",
       width: 80,
-      align: 'center',
+      align: "center",
       render: (_, __, index) => (
         <span className="text-slate-400 text-sm font-mono font-medium">
           #{(pagination.current - 1) * pagination.pageSize + index + 1}
@@ -97,8 +97,8 @@ const AppointmentTablePatient = ({
       ),
     },
     {
-      title: 'Bệnh nhân',
-      key: 'patient',
+      title: "Bệnh nhân",
+      key: "patient",
       render: (_, record) => (
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
@@ -106,7 +106,7 @@ const AppointmentTablePatient = ({
           </div>
           <div className="flex flex-col">
             <span className="font-semibold text-slate-800 leading-tight">
-              {record.patientId?.fullName || 'Chưa cập nhật'}
+              {record.patientId?.fullName || "Chưa cập nhật"}
             </span>
             <span className="text-xs text-slate-500 mt-0.5">Hồ sơ cá nhân</span>
           </div>
@@ -114,8 +114,8 @@ const AppointmentTablePatient = ({
       ),
     },
     {
-      title: 'Bác sĩ phụ trách',
-      key: 'doctor',
+      title: "Bác sĩ phụ trách",
+      key: "doctor",
       render: (_, record) => (
         <div className="flex items-center gap-3">
           <Avatar
@@ -125,18 +125,18 @@ const AppointmentTablePatient = ({
           />
           <div className="flex flex-col">
             <span className="font-semibold text-slate-800 leading-tight">
-              {record.doctor?.fullName || 'Chưa cập nhật'}
+              {record.doctor?.fullName || "Chưa cập nhật"}
             </span>
             <span className="text-xs text-blue-600 font-medium mt-0.5">
-              {record.doctor?.specialty?.name || 'Chuyên khoa chung'}
+              {record.doctor?.specialty?.name || "Chuyên khoa chung"}
             </span>
           </div>
         </div>
       ),
     },
     {
-      title: 'Thời gian khám',
-      key: 'datetime',
+      title: "Thời gian khám",
+      key: "datetime",
       width: 200,
       render: (_, record) => {
         const date = record.scheduleInfo?.date || record.slot?.scheduleId?.date;
@@ -146,7 +146,7 @@ const AppointmentTablePatient = ({
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center text-slate-800 font-semibold text-sm">
               <CalendarOutlined className="mr-2 text-slate-400" />
-              {date ? formatDateUTC(date) : '---'}
+              {date ? formatDateUTC(date) : "---"}
             </div>
             {startTime && endTime && (
               <div className="flex items-center text-xs font-medium text-slate-600 bg-slate-100 w-fit px-2 py-0.5 rounded-md">
@@ -159,9 +159,9 @@ const AppointmentTablePatient = ({
       },
     },
     {
-      title: 'Trạng thái',
-      dataIndex: 'status',
-      key: 'status',
+      title: "Trạng thái",
+      dataIndex: "status",
+      key: "status",
       width: 140,
       render: (status) => {
         const style = statusMap[status] || {};
@@ -175,8 +175,8 @@ const AppointmentTablePatient = ({
       },
     },
     {
-      title: 'Thanh toán',
-      key: 'payment',
+      title: "Thanh toán",
+      key: "payment",
       width: 170,
       render: (_, record) => (
         <PaymentTags
@@ -186,10 +186,10 @@ const AppointmentTablePatient = ({
       ),
     },
     {
-      title: 'Thao tác',
-      key: 'actions',
+      title: "Thao tác",
+      key: "actions",
       width: 130,
-      align: 'center',
+      align: "center",
       render: (_, record) => (
         <Space size="middle" direction="vertical" className="w-full!">
           <Button
@@ -215,7 +215,7 @@ const AppointmentTablePatient = ({
           )}
 
           {isPast &&
-            record.status === 'completed' &&
+            record.status === "completed" &&
             (record.reviewed ? (
               <div className="text-xs text-slate-400 font-medium text-center bg-slate-50 py-1 rounded-md">
                 Đã đánh giá
@@ -263,7 +263,7 @@ const AppointmentTablePatient = ({
                   </div>
                   <div className="font-bold text-slate-800 text-base flex items-center">
                     <CalendarOutlined className="mr-2 text-slate-400" />
-                    {appointmentDate ? formatDateUTC(appointmentDate) : '---'}
+                    {appointmentDate ? formatDateUTC(appointmentDate) : "---"}
                   </div>
                   {item.slot?.startTime && item.slot?.endTime && (
                     <div className="text-sm text-blue-600 font-semibold flex items-center mt-1.5">
@@ -294,7 +294,7 @@ const AppointmentTablePatient = ({
                       Bệnh nhân
                     </div>
                     <div className="font-bold text-slate-800 mt-0.5">
-                      {item.patientProfile?.fullName || 'Chưa cập nhật'}
+                      {item.patientId?.fullName || "Chưa cập nhật"}
                     </div>
                   </div>
                 </div>
@@ -309,10 +309,10 @@ const AppointmentTablePatient = ({
                       Bác sĩ phụ trách
                     </div>
                     <div className="font-bold text-slate-800 mt-0.5">
-                      {item.doctor?.fullName || 'Chưa cập nhật'}
+                      {item.doctor?.fullName || "Chưa cập nhật"}
                     </div>
                     <div className="text-xs text-blue-600 font-medium">
-                      {item.doctor?.specialty?.name || 'Chuyên khoa'}
+                      {item.doctor?.specialty?.name || "Chuyên khoa"}
                     </div>
                   </div>
                 </div>
@@ -342,7 +342,7 @@ const AppointmentTablePatient = ({
                     </Button>
                   )}
                   {isPast &&
-                    item.status === 'completed' &&
+                    item.status === "completed" &&
                     (item.reviewed ? (
                       <div className="flex-1 text-center py-1.5 bg-slate-50 text-slate-400 text-sm font-medium rounded-lg">
                         Đã đánh giá

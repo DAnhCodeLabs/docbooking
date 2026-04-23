@@ -141,6 +141,7 @@ const extractDoctorName = (message) => {
   const followingText = match[1].trim();
 
   // 2. Danh sách "từ dừng" (Stop-words) phổ biến trong giao tiếp y tế tiếng Việt
+  // Thay thế mảng stopWords cũ bằng mảng này
   const stopWords = [
     "cho",
     "em",
@@ -172,6 +173,20 @@ const extractDoctorName = (message) => {
     "nhé",
     "ạ",
     "sao",
+    "là",
+    "bao",
+    "nhiêu",
+    "tiền",
+    "giá",
+    "chi",
+    "phí",
+    "của",
+    "tên",
+    "gì",
+    "như",
+    "thế",
+    "khoảng",
+    "mấy",
   ];
 
   // 3. Tách chuỗi thành mảng các từ (Tokenization)
@@ -200,7 +215,7 @@ const extractDoctorName = (message) => {
   }
 
   return null;
-};
+};;
 
 /**
  * Xác định trạng thái lịch hẹn.

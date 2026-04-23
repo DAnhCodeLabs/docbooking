@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 
 export const generatePrescriptionHTML = (consultation, appointment) => {
   const doctor = appointment.doctor;
-  const patient = appointment.patientId;
+  const patient = appointment.patientProfile;
   const slot = appointment.slot;
   const schedule = slot?.scheduleId || {};
   const consultationDate = appointment.completedAt || new Date();
@@ -186,7 +186,7 @@ export const generatePrescriptionHTML = (consultation, appointment) => {
         <div class="info-item"><span class="info-label">Số điện thoại:</span><span class="info-value">${patient?.phone || "---"}</span></div>
         <div class="info-item"><span class="info-label">Ngày khám:</span><span class="info-value">${dayjs(consultationDate).format("DD/MM/YYYY")}</span></div>
         <div class="info-item"><span class="info-label">Giờ khám:</span><span class="info-value">${slot?.startTime || ""} - ${slot?.endTime || ""}</span></div>
-        <div class="info-item"><span class="info-label">Bác sĩ:</span><span class="info-value"><strong>${doctor?.fullName || "Bác sĩ"}</strong> ${doctor?.specialty?.name ? `- ${doctor.specialty.name}` : ""}</span></div>
+        <div class="info-item"><span class="info-label">Bác sĩ:</span><span class="info-value"><strong>${doctor?.fullName || "Bác sĩ"}</strong></span></div>
         <div class="info-item"><span class="info-label">Chẩn đoán:</span><span class="info-value">${consultation.diagnosis || ""}</span></div>
       </div>
 

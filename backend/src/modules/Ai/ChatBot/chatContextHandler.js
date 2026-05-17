@@ -1,12 +1,12 @@
 import ClinicLead from "../../../models/ClinicLead.js";
 import {
-  findClinicByName,
-  findSpecialtyByName,
   clinicHasSpecialty,
+  findClinicByName,
   findDoctorByName,
-  getDoctorResponseData,
   findDoctorsByClinic,
   findDoctorsByClinicAndSpecialty,
+  findSpecialtyByName,
+  getDoctorResponseData,
 } from "./ClinicLookupService.js";
 
 // ============================================================================
@@ -44,15 +44,45 @@ export const findHospitalsByContext = async (location) => {
 // ============================================================================
 // 2. PHÂN LUỒNG TRUY VẤN DỮ LIỆU ĐỒNG THỜI (CONCURRENT I/O)
 // ============================================================================
-export const fetchIntentContext = async (parsed) => {
+export const fetchIntentContext = async (parsed, lastMetadata = null) => {
   let existenceResult = null;
   let specialtyCheckResult = null;
   let doctorInfo = null;
   let clinicInfo = null;
   let doctorsInClinic = null;
   let specialtyDoctorsList = null;
+  let bookingRequest = false;
+  let targetDoctorInfo = null;
 
   switch (parsed.intent) {
+    case "booking_request": {
+      bookingRequest = true;
+      // Nếu có tên bác sĩ trong câu hiện tại, tìm ngay
+      if (parsed.doctorName && parsed.doctorName.length >= 2) {
+        const found = await findDoctorByName(parsed.doctorName);
+        if (found?.doctorProfile && found?.user) {
+          targetDoctorInfo = getDoctorResponseData(
+            found.doctorProfile,
+            found.user,
+          );
+        }
+      }
+      // Nếu không có tên nhưng có lastMetadata chứa thông tin bác sĩ, ưu tiên dùng metadata
+      else if (lastMetadata && lastMetadata.includes("doctor=")) {
+        const doctorNameMatch = lastMetadata.match(/doctor=([^|]+)/);
+        if (doctorNameMatch && doctorNameMatch[1]) {
+          const found = await findDoctorByName(doctorNameMatch[1]);
+          if (found?.doctorProfile && found?.user) {
+            targetDoctorInfo = getDoctorResponseData(
+              found.doctorProfile,
+              found.user,
+            );
+          }
+        }
+      }
+      break;
+    }
+
     case "check_hospital_existence": {
       if (parsed.clinicName && parsed.clinicName.length >= 2) {
         const clinic = await findClinicByName(parsed.clinicName);
@@ -223,5 +253,7 @@ export const fetchIntentContext = async (parsed) => {
     clinicInfo,
     doctorsInClinic,
     specialtyDoctorsList,
+    bookingRequest,
+    targetDoctorInfo,
   };
 };

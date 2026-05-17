@@ -5,8 +5,6 @@ import Specialty from "../../../models/Specialty.js";
 import ApiError from "../../../utils/ApiError.js";
 import { parseQuery, extractLocation } from "./intentParser.js";
 import { askPythonEngine } from "./AiService.js";
-
-// Import các Module đã chia nhỏ
 import { buildAdaptivePrompt } from "./chatPromptBuilder.js";
 import {
   findHospitalsByContext,
@@ -20,42 +18,46 @@ export const processChat = asyncHandler(async (req, res) => {
   const parsed = parseQuery(message);
   const detectedLocation = extractLocation(message);
 
-  // 2. ÉP XUNG HIỆU NĂNG: Khởi chạy TOÀN BỘ các tác vụ I/O song song
-  const [activeSpecialties, existingSession, intentData, hospitals] =
-    await Promise.all([
-      Specialty.find({ status: "active" }).select("name description").lean(),
-      ChatSession.findOne({ sessionId }),
-      fetchIntentContext(parsed),
-      parsed.intent === "search_service" ||
-      (parsed.intent === "general_symptom" && detectedLocation)
-        ? findHospitalsByContext(detectedLocation)
-        : Promise.resolve([]),
-    ]);
-
-  const session =
-    existingSession || new ChatSession({ sessionId, messages: [] });
-
-  // 3. Trích xuất ngữ cảnh lịch sử
+  // 2. Lấy session hiện tại (hoặc tạo mới)
+  let session = await ChatSession.findOne({ sessionId });
+  if (!session) {
+    session = new ChatSession({ sessionId, messages: [] });
+  }
   const lastMsg = session.messages?.[session.messages.length - 1];
+  const lastMetadata = lastMsg?.metadata || null;
+
+  // 3. Chạy các tác vụ I/O song song (không bao gồm session)
+  const [activeSpecialties, intentData, hospitals] = await Promise.all([
+    Specialty.find({ status: "active" }).select("name description").lean(),
+    fetchIntentContext(parsed, lastMetadata),
+    parsed.intent === "search_service" ||
+    (parsed.intent === "general_symptom" && detectedLocation)
+      ? findHospitalsByContext(detectedLocation)
+      : Promise.resolve([]),
+  ]);
+
+  // 4. Xác định chuyên khoa gợi ý từ lịch sử
   const currentSpec =
     activeSpecialties.find((s) =>
       (lastMsg?.metadata || "").toLowerCase().includes(s.name.toLowerCase()),
     )?.name || "Nội tổng quát";
 
-  // Cập nhật log phiên chat
+  // 5. Cập nhật lịch sử chat
   session.messages.push({ role: "user", content: [{ text: message }] });
-  const history = session.messages
-    .slice(-6)
-    .map((m) => ({ role: m.role, content: m.content }));
+  const history = session.messages.slice(-6).map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
 
-  // 4. Xây dựng System Prompt (Sử dụng Object Mapping an toàn)
+  // 6. Xây dựng System Prompt
   const systemInstruction = buildAdaptivePrompt({
     specialties: activeSpecialties,
     hospitals,
     userLoc: detectedLocation,
     currentSpec,
     intent: parsed.intent,
-    ...intentData, // Spread operator bung toàn bộ 6 properties từ fetchIntentContext
+    lastMetadata,
+    ...intentData, // chứa existenceResult, doctorInfo, bookingRequest, targetDoctorInfo, ...
   });
 
   const payload = [
@@ -63,7 +65,7 @@ export const processChat = asyncHandler(async (req, res) => {
     ...history,
   ];
 
-  // 5. Giao tiếp AI & Phản hồi
+  // 7. Gọi AI và xử lý phản hồi
   try {
     const rawAiResponse = await askPythonEngine(payload);
     let finalReply = rawAiResponse;

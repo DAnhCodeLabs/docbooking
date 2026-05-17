@@ -5,6 +5,16 @@ import { STOP_WORDS } from "../../../utils/STOP_WORDS.js";
 
 // 1. NHẬN DIỆN Ý ĐỊNH (INTENT DETECTION)
 const detectIntent = (lowerText) => {
+  // ======================== INTENT MỚI: ĐẶT LỊCH KHÁM (CAO NHẤT) ========================
+  // SỬA: Bỏ dấu ^, thêm các mẫu "cách đặt lịch", "hướng dẫn đặt lịch", "làm thế nào để đặt lịch", "cho tôi hỏi đặt lịch"
+  if (
+    /(đặt lịch|đặt lịch khám|đặt hẹn|đặt lịch hẹn|muốn đặt lịch|cần đặt lịch|đăng ký khám|đăng ký lịch khám|book lịch|book khám|cách đặt lịch|hướng dẫn đặt lịch|làm thế nào để đặt lịch|cho tôi hỏi đặt lịch)(\s+với\s+(bác sĩ|bs)\s+([a-zà-ỹ\s]+))?/i.test(
+      lowerText,
+    )
+  ) {
+    return "booking_request";
+  }
+
   // ----- INTENT MỚI: TÌM BÁC SĨ THEO BỆNH VIỆN + CHUYÊN KHOA -----
   if (
     /(ở|tại)\s+(bệnh viện|phòng khám)\s+([^,?.!]+?)\s+(có|có những)\s+(bác sĩ|bs)\s+(chuyên khoa|khoa)\s+([^,?.!]+?)\s*(nào|không)?/i.test(
@@ -86,13 +96,12 @@ const detectIntent = (lowerText) => {
 
   // ----- INTENT: CHẶN CÂU HỎI NGOÀI LỀ -----
   if (
-    /(chó|mèo|vật nuôi|thú cưng|cây cảnh|thời tiết|nấu ăn|bóng đá|chính trị)/.test(
+    /(chó|cún|mèo|vật nuôi|thú cưng|thú y|động vật|heo|lợn|gà|vịt|chim|cá|chuột|hamster|bò|trâu|ngựa|cây cảnh|thời tiết|nấu ăn|bóng đá|chính trị)/.test(
       lowerText,
     )
   ) {
     return "off_topic";
   }
-
   // ----- INTENT: CHẶN YÊU CẦU KÊ ĐƠN THUỐC -----
   if (
     /(kê đơn|kê thuốc|mua thuốc|bán thuốc|uống thuốc gì|liều thuốc|cho thuốc)/.test(
@@ -214,6 +223,7 @@ export const parseQuery = (message) => {
     intent === "doctor_in_clinic" ||
     intent === "clinic_has_doctor" ||
     intent === "find_doctors_by_clinic_specialty" ||
+    intent === "booking_request" ||
     !!entities.clinicName ||
     !!entities.specialtyName ||
     !!entities.doctorName;

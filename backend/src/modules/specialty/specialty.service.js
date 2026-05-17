@@ -15,8 +15,10 @@ export const getSpecialties = async (query) => {
   const features = new ApiFeatures(baseQuery, query)
     .search() // Tìm theo tên
     .filter() // Lọc theo status
-    .sort()
-    .paginate();
+    .sort();
+  if (query.limit || query.page) {
+    features.paginate();
+  }
 
   const specialties = await features.query;
   const total = await features.countTotal(Specialty);
@@ -172,20 +174,21 @@ export const toggleSpecialtyStatus = async (
     );
   }
 
-   // Nếu là deactivate, kiểm tra xem có bác sĩ active nào đang dùng chuyên khoa này không
- if (action === "deactivate") {
-   const DoctorProfile = (await import("../../models/DoctorProfile.js")).default;
-   const activeDoctors = await DoctorProfile.countDocuments({
-     specialty: id,
-     status: "active",
-   });
-   if (activeDoctors > 0) {
-     throw new ApiError(
-       StatusCodes.CONFLICT,
-       `Không thể vô hiệu hóa chuyên khoa vì còn ${activeDoctors} bác sĩ đang hoạt động thuộc chuyên khoa này. Vui lòng chuyển bác sĩ sang chuyên khoa khác hoặc vô hiệu hóa họ trước.`,
-     );
-   }
- }
+  // Nếu là deactivate, kiểm tra xem có bác sĩ active nào đang dùng chuyên khoa này không
+  if (action === "deactivate") {
+    const DoctorProfile = (await import("../../models/DoctorProfile.js"))
+      .default;
+    const activeDoctors = await DoctorProfile.countDocuments({
+      specialty: id,
+      status: "active",
+    });
+    if (activeDoctors > 0) {
+      throw new ApiError(
+        StatusCodes.CONFLICT,
+        `Không thể vô hiệu hóa chuyên khoa vì còn ${activeDoctors} bác sĩ đang hoạt động thuộc chuyên khoa này. Vui lòng chuyển bác sĩ sang chuyên khoa khác hoặc vô hiệu hóa họ trước.`,
+      );
+    }
+  }
 
   // Thực hiện Xóa mềm (Đổi trạng thái)
   specialty.status = newStatus;

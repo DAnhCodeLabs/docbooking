@@ -1,65 +1,65 @@
 import express from "express";
-import { processChat } from "./chatController.js";
-import { protect } from "../../../middlewares/auth.js";
-import { processPrivateChat } from "./privateChatController.js";
-import ApiError from "../../../utils/ApiError.js";
-import { StatusCodes } from "http-status-codes";
 import rateLimit from "express-rate-limit";
+import { StatusCodes } from "http-status-codes";
+import ApiError from "../../../utils/ApiError.js";
+// ĐÃ XÓA: import { protect } từ auth.js
+// ĐÃ XÓA: import { processPrivateChat }
+import { processChat } from "./chatController.js";
 
 const router = express.Router();
 
+// ============================================================================
+// 1. MIDDLEWARES BẢO VỆ (SECURITY & VALIDATION)
+// ============================================================================
 const chatLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // Khung thời gian: 1 phút
-  max: 15, // Giới hạn: Tối đa 15 tin nhắn / 1 phút / 1 IP
-  standardHeaders: true, // Trả về header RateLimit-* chuẩn
-  legacyHeaders: false, // Tắt các header X-RateLimit-* cũ
+  windowMs: 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
   handler: (req, res, next) => {
-    // Nếu vi phạm, ném lỗi cho errorHandler.js xử lý tập trung
     next(
       new ApiError(
         StatusCodes.TOO_MANY_REQUESTS,
-        "Bạn đã gửi tin nhắn quá nhanh. Vui lòng đợi 1 phút rồi thử lại nhé.",
+        "Bạn thao tác quá nhanh. Vui lòng đợi 1 phút rồi thử lại nhé.",
       ),
     );
   },
 });
 
-// =========================================================================
-// LỚP BẢO VỆ 2: PAYLOAD SIZE LIMIT (CHỐNG TRÀN BỘ NHỚ & TỐN TOKEN AI)
-// =========================================================================
-const validatePayloadSize = (req, res, next) => {
-  const { message } = req.body;
+const validateChatPayload = (req, res, next) => {
+  const { sessionId, message } = req.body;
 
-  // Giới hạn độ dài tin nhắn tối đa 500 ký tự (khoảng 100 từ)
-  if (message && message.length > 500) {
+  if (!sessionId) {
     return next(
       new ApiError(
-        StatusCodes.REQUEST_TOO_LONG,
-        "Tin nhắn quá dài (tối đa 500 ký tự). Vui lòng chia nhỏ câu hỏi của bạn.",
+        StatusCodes.BAD_REQUEST,
+        "Thiếu mã phiên làm việc (sessionId).",
       ),
     );
   }
+
+  if (!message || typeof message !== "string" || message.trim().length === 0) {
+    return next(
+      new ApiError(StatusCodes.BAD_REQUEST, "Nội dung tin nhắn không hợp lệ."),
+    );
+  }
+
+  if (message.length > 500) {
+    return next(
+      new ApiError(
+        StatusCodes.REQUEST_TOO_LONG,
+        "Tin nhắn quá dài (tối đa 500 ký tự). Vui lòng chia nhỏ câu hỏi.",
+      ),
+    );
+  }
+
+  req.body.message = message.trim();
   next();
 };
 
-// =========================================================================
-// ĐĂNG KÝ ROUTES ĐÃ ĐƯỢC BẢO VỆ
-// =========================================================================
+// ============================================================================
+// 2. KẾT NỐI ROUTING (CHỈ CÒN DUY NHẤT LUỒNG KHÁCH VÃNG LAI)
+// ============================================================================
+router.post("/", chatLimiter, validateChatPayload, processChat);
 
-// Route cho Khách vãng lai (Guest)
-router.post(
-  "/",
-  chatLimiter, // Chặn IP spam
-  validatePayloadSize, // Chặn văn bản dài
-  processChat, // Chuyển vào Controller xử lý
-);
-
-// Route cho Người dùng đã đăng nhập (User)
-router.post(
-  "/private",
-  protect, // Xác thực JWT (Middleware cũ giữ nguyên)
-  chatLimiter, // Chặn IP spam
-  validatePayloadSize, // Chặn văn bản dài
-  processPrivateChat, // Chuyển vào Controller xử lý
-);
 export default router;

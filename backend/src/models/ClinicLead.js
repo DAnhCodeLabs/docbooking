@@ -92,10 +92,16 @@ const clinicLeadSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    specialties: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Specialty",
+      },
+    ],
   },
   { timestamps: true },
 );
 
 clinicLeadSchema.index({ clinicName: "text", phone: "text", email: "text" });
-
+clinicLeadSchema.index({ specialties: 1 });
 export default mongoose.model("ClinicLead", clinicLeadSchema);

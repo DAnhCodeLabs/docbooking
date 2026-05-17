@@ -5,7 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import DoctorProfile from "../models/DoctorProfile.js";
 import Specialty from "../models/Specialty.js";
-import AiService from "../modules/Ai/ChatBot/AiService.js";
+import { generateEmbedding } from "../modules/Ai/ChatBot/AiService.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -68,7 +68,7 @@ const runMigration = async () => {
         );
 
         // Gọi AI Service để lấy Vector (Đã được ép về 768 chiều trong file AiService.js)
-        const vectorData = await AiService.generateEmbedding(contextText);
+        const vectorData = await generateEmbedding(contextText);
 
         if (vectorData && vectorData.length > 0) {
           await DoctorProfile.updateOne(

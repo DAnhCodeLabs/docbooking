@@ -16,11 +16,11 @@ const ContactPage = () => {
         {/* Tiêu đề trang */}
         <div className="text-center mb-10 md:mb-16 px-4">
           <h2 className="text-3xl md:text-4xl font-bold text-[#00b5f1] mb-4">
-            Hợp tác với chúng tôi
+            Liên hệ với chúng tôi
           </h2>
           <p className="text-gray-600 text-sm md:text-base max-w-4xl mx-auto leading-relaxed">
-            Medpro rất hân hạnh được hợp tác cùng với các cơ sở y tế, các quý
-            bác sĩ để tiếp cận đến hàng triệu bệnh nhân trên nền tảng Medpro.
+            DocGo rất hân hạnh được hợp tác cùng với các cơ sở y tế, các quý
+            bác sĩ để tiếp cận đến hàng triệu bệnh nhân trên nền tảng DocGo.
             Đặc biệt với chính sách chia sẻ doanh thu hấp dẫn khi trở thành Cộng
             Tác Viên phát triển mạng lưới cơ sở y tế.
           </p>
@@ -43,7 +43,7 @@ const ContactPage = () => {
                   </div>
                   <div>
                     <h4 className="font-bold text-[#00558f] text-base mb-1">
-                      MEDPRO - ĐẶT LỊCH KHÁM BỆNH
+                      DocGo - ĐẶT LỊCH KHÁM BỆNH
                     </h4>
                     <p className="text-gray-600 text-sm leading-relaxed">
                       236/29/18 Điện Biên Phủ - Phường 17 -<br />

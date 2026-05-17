@@ -1,231 +1,226 @@
-// utils/intentParser.js
-// Module nhận diện ý định tra cứu dữ liệu bệnh nhân từ câu hỏi text.
-// Chỉ dùng regex và từ khóa, không gọi AI. Trả về object chuẩn.
+// ============================================================================
+// BỘ TỪ KHÓA DỪNG (STOP-WORDS) ĐƯỢC TỐI ƯU HÓA
+// ============================================================================
+import { STOP_WORDS } from "../../../utils/STOP_WORDS.js";
 
-/**
- * Phân tích câu hỏi của người dùng.
- * @param {string} message - Câu hỏi dạng text.
- * @returns {Object} - { type, date, relativeTime, doctorName, status, recordId, unrecognized }
- */
-export const parsePatientQuery = (message) => {
-  const lowerMsg = message.toLowerCase();
-
-  // Khởi tạo kết quả mặc định
-  const result = {
-    type: null,
-    date: null,
-    relativeTime: null,
-    doctorName: null,
-    status: null,
-    recordId: null,
-    unrecognized: false,
-  };
-
-  // 1. Xác định type
-  result.type = detectType(lowerMsg);
-
-  // 2. Trích xuất ngày cụ thể (ưu tiên hơn relativeTime)
-  const extractedDate = extractDateFromString(message);
-  if (extractedDate) {
-    result.date = extractedDate;
-  } else {
-    result.relativeTime = extractRelativeTime(lowerMsg);
-  }
-
-  // 3. Tìm tên bác sĩ
-  result.doctorName = extractDoctorName(message);
-
-  // 4. Xác định trạng thái lịch hẹn
-  result.status = extractStatus(lowerMsg);
-
-  // 5. Nếu không có type và không có tham số nào hữu ích -> đánh dấu không nhận diện được
+// 1. NHẬN DIỆN Ý ĐỊNH (INTENT DETECTION)
+const detectIntent = (lowerText) => {
+  // ----- INTENT MỚI: TÌM BÁC SĨ THEO BỆNH VIỆN + CHUYÊN KHOA -----
   if (
-    !result.type &&
-    !result.date &&
-    !result.relativeTime &&
-    !result.doctorName &&
-    !result.status
-  ) {
-    result.unrecognized = true;
-  }
-
-  return result;
-};
-
-// ==================== Các hàm phụ trợ ====================
-
-/**
- * Xác định loại dữ liệu cần tra cứu.
- * @param {string} lowerMsg
- * @returns {string|null}
- */
-const detectType = (lowerMsg) => {
-  // 1. Appointment – lịch hẹn, lịch sử khám
-  if (
-    /lịch hẹn|cuộc hẹn|lịch khám|lịch sử khám|khám bệnh|đặt lịch|lịch hẹn sắp tới/.test(
-      lowerMsg,
+    /(ở|tại)\s+(bệnh viện|phòng khám)\s+([^,?.!]+?)\s+(có|có những)\s+(bác sĩ|bs)\s+(chuyên khoa|khoa)\s+([^,?.!]+?)\s*(nào|không)?/i.test(
+      lowerText,
+    ) ||
+    /(bệnh viện|phòng khám)\s+([^,?.!]+?)\s+(có|có những)\s+(bác sĩ|bs)\s+(chuyên khoa|khoa)\s+([^,?.!]+?)\s*(nào|không)?/i.test(
+      lowerText,
     )
   ) {
-    return "appointment";
+    return "find_doctors_by_clinic_specialty";
   }
-  // 2. Consultation – kết quả khám, đơn thuốc
+
+  // ----- INTENT: HỎI GIÁ KHÁM CỦA BÁC SĨ -----
   if (
-    /kết quả khám|chẩn đoán|đơn thuốc|toa thuốc|hướng dẫn|tái khám/.test(
-      lowerMsg,
+    /(giá khám|phí khám|khám giá bao nhiêu|chi phí khám|bao nhiêu tiền)\s+(của\s+)?(bác sĩ|bs)\s+([a-zà-ỹ\s]+)/i.test(
+      lowerText,
     )
   ) {
-    return "consultation";
+    return "doctor_fee";
   }
-  // 3. Medical record – hồ sơ, bảo hiểm,...
-  if (/hồ sơ|bảo hiểm|nhóm máu|dị ứng|cccd|thông tin cá nhân/.test(lowerMsg)) {
-    return "medicalRecord";
+
+  // ----- INTENT: HỎI THÔNG TIN BÁC SĨ -----
+  if (
+    /(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,})/i.test(lowerText) &&
+    /(thông tin|giới thiệu|profile|là ai|tốt không|khám gì|chuyên khoa gì)/i.test(
+      lowerText,
+    )
+  ) {
+    return "doctor_info";
   }
-  // 4. Payment – thanh toán
-  if (/thanh toán|tiền|nợ|hoàn tiền|đã trả|chưa trả|chi phí/.test(lowerMsg)) {
-    return "payment";
+
+  // ----- INTENT: BÁC SĨ THUỘC CHUYÊN KHOA NÀO -----
+  if (
+    /(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,}?)\s+(thuộc chuyên khoa|chuyên khoa gì|là khoa gì|chuyên ngành gì)/i.test(
+      lowerText,
+    )
+  ) {
+    return "doctor_specialty";
   }
-  return null;
+
+  // ----- INTENT: BÁC SĨ CÓ TRONG BỆNH VIỆN Y KHÔNG -----
+  if (
+    /(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,}?)\s+(có trong|có ở|làm tại|công tác tại)\s+(bệnh viện|phòng khám)\s+([^,?.!]+?)\s*(không|chưa|hả|ko)?/i.test(
+      lowerText,
+    )
+  ) {
+    return "doctor_in_clinic";
+  }
+
+  // ----- INTENT: BỆNH VIỆN Z CÓ BÁC SĨ M KHÔNG -----
+  if (
+    /(bệnh viện|phòng khám)\s+([^,?.!]+?)\s+(có|không có)\s+(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,}?)\s*(không|chưa|ko)?/i.test(
+      lowerText,
+    )
+  ) {
+    return "clinic_has_doctor";
+  }
+
+  // ----- INTENT: KIỂM TRA TỒN TẠI BỆNH VIỆN (chỉ khi có tên cụ thể) -----
+  if (
+    /(có|thấy|biết|tìm thấy)\s+(bệnh viện|phòng khám|cơ sở y tế)\s+(?!nào|gì|đâu)([a-zà-ỹ\s]{2,}?)\s+(không|chưa|hả|ko)/i.test(
+      lowerText,
+    )
+  ) {
+    return "check_hospital_existence";
+  }
+
+  // ----- INTENT: KIỂM TRA CHUYÊN KHOA TRONG BỆNH VIỆN -----
+  if (
+    /(bệnh viện|phòng khám|cơ sở y tế)\s+.+\s+(có|với|bao gồm)\s+(chuyên khoa|khoa)\s+.+\s+(không|chưa|hả|ko)/i.test(
+      lowerText,
+    ) ||
+    /(chuyên khoa|khoa)\s+.+\s+(có|nằm trong|thuộc)\s+(bệnh viện|phòng khám)\s+.+\s+(không|chưa|hả|ko)/i.test(
+      lowerText,
+    )
+  ) {
+    return "check_specialty_in_clinic";
+  }
+
+  // ----- INTENT: CHẶN CÂU HỎI NGOÀI LỀ -----
+  if (
+    /(chó|mèo|vật nuôi|thú cưng|cây cảnh|thời tiết|nấu ăn|bóng đá|chính trị)/.test(
+      lowerText,
+    )
+  ) {
+    return "off_topic";
+  }
+
+  // ----- INTENT: CHẶN YÊU CẦU KÊ ĐƠN THUỐC -----
+  if (
+    /(kê đơn|kê thuốc|mua thuốc|bán thuốc|uống thuốc gì|liều thuốc|cho thuốc)/.test(
+      lowerText,
+    )
+  ) {
+    return "prescription_request";
+  }
+
+  // ----- INTENT: CÂU HỎI CÁ NHÂN -----
+  if (
+    /(lịch hẹn|cuộc hẹn|lịch khám|kết quả|đơn thuốc|toa thuốc|hồ sơ|bảo hiểm|thanh toán)/.test(
+      lowerText,
+    )
+  ) {
+    return "personal_query";
+  }
+
+  // ----- INTENT: TÌM KIẾM DỊCH VỤ CHUNG -----
+  if (
+    /(bệnh viện|phòng khám|cơ sở y tế|bác sĩ|bs|chuyên khoa)/.test(lowerText)
+  ) {
+    return "search_service";
+  }
+
+  return "general_symptom";
 };
 
-/**
- * Trích xuất ngày tháng cụ thể từ câu hỏi.
- * Hỗ trợ định dạng: dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy, dd tháng mm năm yyyy
- * @param {string} message
- * @returns {Date|null} - Ngày ở UTC 00:00:00 hoặc null
- */
-const extractDateFromString = (message) => {
-  // Pattern 1: dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy
-  let match = message.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
-  if (match) {
-    const day = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10) - 1; // JS tháng từ 0
-    const year = parseInt(match[3], 10);
-    return new Date(Date.UTC(year, month, day));
+// 2. BÓC TÁCH THỰC THỂ (ENTITY EXTRACTION) – ĐÃ SỬA
+const extractEntities = (originalText) => {
+  let clinicName = null;
+  let specialtyName = null;
+  let doctorName = null;
+  let preferGood = false;
+
+  // [SURGICAL FIX]: Thêm (?<!đa\s+) để không cho phép từ 'khoa' trong 'đa khoa' kích hoạt ngắt Lookahead
+  const clinicMatch = originalText.match(
+    /(?:bệnh viện|phòng khám|tại|ở)\s+([^,?.!]+?)(?=\s*(?:[,?.!])?\s+(?:có|bác sĩ|bs|(?<!đa\s+)\bkhoa\b|chuyên\s+khoa|không|nào|hả|chưa|ko|ở|tại)|$)/i,
+  );
+  if (clinicMatch) {
+    let raw = clinicMatch[1].trim();
+    raw = raw.replace(/\s*(nào|hả|chưa|ko|không)$/i, "");
+    clinicName = raw;
   }
-  // Pattern 2: dd tháng mm năm yyyy (tiếng Việt)
-  match = message.match(/(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i);
-  if (match) {
-    const day = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10) - 1;
-    const year = parseInt(match[3], 10);
-    return new Date(Date.UTC(year, month, day));
+
+  // [SURGICAL FIX]: Thêm (?<!đa\s+)\b để ép Regex bỏ qua chữ 'khoa' thuộc cụm mô tả 'đa khoa' của bệnh viện
+  const specMatch = originalText.match(
+    /(?<!đa\s+)\b(?:chuyên\s+khoa|khoa)\s+([^,?.!]+?)(?=\s*(?:[,?.!])?\s+(?:có|bác sĩ|bs|không|giỏi|tốt|nào|hả|chưa|ko|ở|tại)|$)/i,
+  );
+  if (specMatch) {
+    let raw = specMatch[1].trim();
+    raw = raw.replace(/\s*(nào|hả|chưa|ko|không)$/i, "");
+    specialtyName = raw;
   }
-  return null;
-};
 
-/**
- * Trích xuất thời gian tương đối (gần nhất, hôm qua, tuần trước...)
- * @param {string} lowerMsg
- * @returns {string|null}
- */
-const extractRelativeTime = (lowerMsg) => {
-  if (/gần nhất|mới nhất|cuối cùng/.test(lowerMsg)) return "latest";
-  if (/hôm qua/.test(lowerMsg)) return "yesterday";
-  if (/hôm nay/.test(lowerMsg)) return "today";
-  if (/tuần trước/.test(lowerMsg)) return "last_week";
-  if (/tuần này/.test(lowerMsg)) return "this_week";
-  if (/tháng trước/.test(lowerMsg)) return "last_month";
-  return null;
-};
-
-/**
- * Trích xuất tên bác sĩ (nếu có).
- * @param {string} message
- * @returns {string|null}
- */
-const extractDoctorName = (message) => {
-  // 1. Tìm vị trí của từ khóa gọi bác sĩ và lấy toàn bộ phần chữ phía sau
-  const match = message.match(/(?:bác sĩ|bs|doctor)\s+(.*)/i);
-  if (!match || !match[1]) return null;
-
-  const followingText = match[1].trim();
-
-  // 2. Danh sách "từ dừng" (Stop-words) phổ biến trong giao tiếp y tế tiếng Việt
-  // Thay thế mảng stopWords cũ bằng mảng này
-  const stopWords = [
-    "cho",
-    "em",
-    "tôi",
-    "ơi",
-    "có",
-    "giúp",
-    "tư",
-    "vấn",
-    "khám",
-    "xem",
-    "làm",
-    "hỏi",
-    "muốn",
-    "nào",
-    "giỏi",
-    "tốt",
-    "đâu",
-    "ở",
-    "đang",
-    "bị",
-    "anh",
-    "chị",
-    "mình",
-    "cháu",
-    "con",
-    "dạ",
-    "vậy",
-    "nhé",
-    "ạ",
-    "sao",
-    "là",
-    "bao",
-    "nhiêu",
-    "tiền",
-    "giá",
-    "chi",
-    "phí",
-    "của",
-    "tên",
-    "gì",
-    "như",
-    "thế",
-    "khoảng",
-    "mấy",
-  ];
-
-  // 3. Tách chuỗi thành mảng các từ (Tokenization)
-  const words = followingText.split(/\s+/);
-  const nameWords = [];
-
-  for (let word of words) {
-    // Làm sạch dấu câu ở cuối từ (vd: "Tuấn." -> "Tuấn", "hỏi," -> "hỏi")
-    const cleanWord = word.replace(/[.,!?]+$/, "").toLowerCase();
-
-    // 4. Nếu đụng phải từ giao tiếp (Stop-word), LẬP TỨC DỪNG thu thập tên
-    if (stopWords.includes(cleanWord)) {
-      break;
+  // Lấy tên Bác sĩ (Giữ nguyên toàn bộ phần phía dưới)
+  const docMatch = originalText.match(/(?:bác sĩ|bs|doctor)\s+(.*)/i);
+  if (docMatch && docMatch[1]) {
+    const words = docMatch[1].trim().split(/\s+/);
+    const nameWords = [];
+    for (let word of words) {
+      const cleanWord = word.replace(/[.,!?]+$/, "").toLowerCase();
+      if (STOP_WORDS.has(cleanWord)) break;
+      nameWords.push(word.replace(/[.,!?]+$/, ""));
     }
-
-    // Đẩy từ gốc (giữ nguyên chữ hoa/thường) vào mảng tên
-    nameWords.push(word.replace(/[.,!?]+$/, ""));
+    const finalName = nameWords.join(" ").trim();
+    if (finalName.length > 0 && nameWords.length <= 5) {
+      doctorName = finalName;
+    }
   }
 
-  const doctorName = nameWords.join(" ").trim();
-
-  // 5. Validation: Một tên người Việt Nam hợp lệ thường dài từ 1 đến 5 từ.
-  // Nếu mảng rỗng (vd: "Bác sĩ ơi"), hoặc quá dài (người dùng gõ một câu dài không chứa stop-word), ta loại bỏ.
-  if (doctorName.length > 0 && nameWords.length <= 5) {
-    return doctorName;
+  if (!doctorName) {
+    const altDoctorMatch = originalText.match(
+      /(?:bác sĩ|bs)\s+([a-zà-ỹ\s]{2,20}?)(?=\s+(?:thuộc|có trong|làm tại|trong|có))/i,
+    );
+    if (altDoctorMatch) doctorName = altDoctorMatch[1].trim();
   }
 
-  return null;
-};;
+  if (
+    /(giỏi|tốt|uy tín|nổi tiếng|cao tay|chuyên môn cao|kinh nghiệm)/i.test(
+      originalText,
+    )
+  ) {
+    preferGood = true;
+  }
 
-/**
- * Xác định trạng thái lịch hẹn.
- * @param {string} lowerMsg
- * @returns {string|null}
- */
-const extractStatus = (lowerMsg) => {
-  if (/đã hoàn thành|completed/.test(lowerMsg)) return "completed";
-  if (/đã hủy|cancelled/.test(lowerMsg)) return "cancelled";
-  if (/chờ thanh toán|pending/.test(lowerMsg)) return "pending_payment";
-  if (/đã hoàn thành|hoàn thành|completed/.test(lowerMsg)) return "completed";
-  return null;
+  return { clinicName, specialtyName, doctorName, preferGood };
+};
+
+// 3. TRÍCH XUẤT ĐỊA ĐIỂM
+export const extractLocation = (text) => {
+  if (!text) return null;
+  const cleanedText = text
+    .replace(/(khối|xóm|số nhà|ngõ|ngách|hẻm|đội|thôn)\s+\d+/gi, "")
+    .replace(/(khối|xóm|số nhà|ngõ|ngách|hẻm|đội|thôn)/gi, "")
+    .trim();
+  const locationMatch = cleanedText.match(
+    /(?:ở|tại|khu vực|quận|huyện|thành phố|tỉnh|tp)\s+([^,?.!]+?)(?=\s+(?:có|bệnh|phòng|chuyên|khám|nào|đâu|không|là)|$)/i,
+  );
+  return locationMatch ? locationMatch[1].trim() : cleanedText;
+};
+
+// 4. HÀM EXPORT parseQuery
+export const parseQuery = (message) => {
+  if (!message || typeof message !== "string") {
+    return { intent: "unknown", requiresDbQuery: false };
+  }
+
+  const intent = detectIntent(message.toLowerCase());
+  const entities = extractEntities(message);
+
+  const requiresDbQuery =
+    intent === "search_service" ||
+    intent === "check_hospital_existence" ||
+    intent === "check_specialty_in_clinic" ||
+    intent === "doctor_info" ||
+    intent === "doctor_fee" ||
+    intent === "doctor_specialty" ||
+    intent === "doctor_in_clinic" ||
+    intent === "clinic_has_doctor" ||
+    intent === "find_doctors_by_clinic_specialty" ||
+    !!entities.clinicName ||
+    !!entities.specialtyName ||
+    !!entities.doctorName;
+
+  return {
+    intent,
+    ...entities,
+    requiresDbQuery,
+  };
 };

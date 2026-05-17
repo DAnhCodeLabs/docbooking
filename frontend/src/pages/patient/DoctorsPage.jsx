@@ -75,7 +75,7 @@ const DoctorsPage = () => {
     const fetchInitialData = async () => {
       try {
         const [specRes, clinicRes] = await Promise.all([
-          publicApi.getSpecialties({ status: "active" }),
+          publicApi.getSpecialties({ status: "active", limit: 1000 }),
           publicApi.getClinics({ status: "resolved" }),
         ]);
         setSpecialties(specRes?.specialties || []);

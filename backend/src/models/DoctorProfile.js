@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import AiService from "../modules/Ai/ChatBot/AiService.js";
+import { generateEmbedding } from "../modules/Ai/ChatBot/AiService.js";
 
 const qualificationSchema = new mongoose.Schema(
   {
@@ -106,6 +106,7 @@ const doctorProfileSchema = new mongoose.Schema(
   },
 );
 
+// MIDDLEWARE: Cập nhật gọi hàm generateEmbedding trực tiếp
 doctorProfileSchema.pre("save", async function (next) {
   if (
     this.isModified("bio") ||
@@ -123,7 +124,6 @@ doctorProfileSchema.pre("save", async function (next) {
         if (specialtyDoc) specName = specialtyDoc.name;
       }
 
-      // [BẢN VÁ P2]: Lấy thêm tên Bác sĩ để nhúng vào Vector, giúp AI tìm đúng tên
       let doctorName = "Chưa rõ";
       if (this.user) {
         const userDoc = await mongoose
@@ -133,10 +133,10 @@ doctorProfileSchema.pre("save", async function (next) {
         if (userDoc) doctorName = userDoc.fullName;
       }
 
-      // Đã đưa ${doctorName} vào chuỗi Embedding
       const textToEmbed = `Bác sĩ ${doctorName}, chuyên khoa ${specName}. Kinh nghiệm thực tế ${this.experience} năm. Thông tin chuyên môn và điều trị: ${this.bio || "Không có"}`;
 
-      const vectorData = await AiService.generateEmbedding(textToEmbed);
+      // GỌI HÀM: Không dùng AiService.generateEmbedding nữa
+      const vectorData = await generateEmbedding(textToEmbed);
 
       if (vectorData && vectorData.length === 768) {
         this.embedding = vectorData;

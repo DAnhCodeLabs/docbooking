@@ -1,9 +1,9 @@
 import dotenv from "dotenv";
 import connectDB from "../config/db.js";
 import User from "../models/User.js";
-
+import dns from "dns";
 dotenv.config();
-
+dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 const createAdmin = async () => {
   try {
     // Kết nối database

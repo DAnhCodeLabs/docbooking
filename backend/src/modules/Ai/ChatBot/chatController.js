@@ -3,13 +3,13 @@ import { StatusCodes } from "http-status-codes";
 import ChatSession from "../../../models/ChatSession.js";
 import Specialty from "../../../models/Specialty.js";
 import ApiError from "../../../utils/ApiError.js";
-import { parseQuery, extractLocation } from "./intentParser.js";
 import { askPythonEngine } from "./AiService.js";
-import { buildAdaptivePrompt } from "./chatPromptBuilder.js";
 import {
-  findHospitalsByContext,
   fetchIntentContext,
+  findHospitalsByContext,
 } from "./chatContextHandler.js";
+import { buildAdaptivePrompt } from "./chatPromptBuilder.js";
+import { extractLocation, parseQuery } from "./intentParser.js";
 
 export const processChat = asyncHandler(async (req, res) => {
   const { sessionId, message } = req.body;

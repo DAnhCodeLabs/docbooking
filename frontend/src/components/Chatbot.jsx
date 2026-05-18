@@ -1,5 +1,4 @@
 import { images } from "@/assets";
-import axiosClient from "@/services/axiosClient";
 import { httpPost } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -188,14 +187,11 @@ const MedicalChatbot = () => {
     setIsTyping(true);
 
     try {
-      const apiUrl = isAuthenticated ? "/chatbot/private" : "/chatbot";
-
-      let response;
-      if (isAuthenticated) {
-        response = await axiosClient.post(apiUrl, { sessionId, message: text });
-      } else {
-        response = await httpPost(apiUrl, { sessionId, message: text }, false);
-      }
+      const response = await httpPost(
+        "/chatbot",
+        { sessionId, message: text },
+        false,
+      );
       // response là data đã được unwrap bởi http.js
       const botReply =
         response?.message?.reply ||

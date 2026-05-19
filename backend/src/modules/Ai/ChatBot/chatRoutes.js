@@ -5,6 +5,7 @@ import ApiError from "../../../utils/ApiError.js";
 // ĐÃ XÓA: import { protect } từ auth.js
 // ĐÃ XÓA: import { processPrivateChat }
 import { processChat } from "./chatController.js";
+import { optionalAuth } from "../../../middlewares/optionalAuth.js";
 
 const router = express.Router();
 
@@ -60,6 +61,6 @@ const validateChatPayload = (req, res, next) => {
 // ============================================================================
 // 2. KẾT NỐI ROUTING (CHỈ CÒN DUY NHẤT LUỒNG KHÁCH VÃNG LAI)
 // ============================================================================
-router.post("/", chatLimiter, validateChatPayload, processChat);
+router.post("/", optionalAuth, chatLimiter, validateChatPayload, processChat);
 
 export default router;

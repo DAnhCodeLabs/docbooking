@@ -1,3 +1,6 @@
+// ============================================================
+// backend/src/modules/Ai/ChatBot/chatContextHandler.js
+// ============================================================
 import ClinicLead from "../../../models/ClinicLead.js";
 import {
   clinicHasSpecialty,
@@ -9,8 +12,14 @@ import {
   getDoctorResponseData,
 } from "./ClinicLookupService.js";
 
+import {
+  getUserAppointments,
+  getUserAppointmentsByDoctor,
+  getUserAppointmentsByDate,
+} from "./PersonalDataService.js";
+
 // ============================================================================
-// 1. THUẬT TOÁN RIPPLE MATCHING
+// 1. THUẬT TOÁN RIPPLE MATCHING (giữ nguyên)
 // ============================================================================
 export const findHospitalsByContext = async (location) => {
   if (!location) return [];
@@ -44,7 +53,17 @@ export const findHospitalsByContext = async (location) => {
 // ============================================================================
 // 2. PHÂN LUỒNG TRUY VẤN DỮ LIỆU ĐỒNG THỜI (CONCURRENT I/O)
 // ============================================================================
-export const fetchIntentContext = async (parsed, lastMetadata = null) => {
+export const fetchIntentContext = async (
+  parsed,
+  lastMetadata,
+  reqUser = null,
+) => {
+  console.log(`[DEBUG fetchIntentContext] Intent: ${parsed.intent}`);
+  console.log(
+    `[DEBUG fetchIntentContext] parsed:`,
+    JSON.stringify(parsed, null, 2),
+  );
+
   let existenceResult = null;
   let specialtyCheckResult = null;
   let doctorInfo = null;
@@ -53,11 +72,11 @@ export const fetchIntentContext = async (parsed, lastMetadata = null) => {
   let specialtyDoctorsList = null;
   let bookingRequest = false;
   let targetDoctorInfo = null;
+  let personalData = null;
 
   switch (parsed.intent) {
     case "booking_request": {
       bookingRequest = true;
-      // Nếu có tên bác sĩ trong câu hiện tại, tìm ngay
       if (parsed.doctorName && parsed.doctorName.length >= 2) {
         const found = await findDoctorByName(parsed.doctorName);
         if (found?.doctorProfile && found?.user) {
@@ -66,9 +85,7 @@ export const fetchIntentContext = async (parsed, lastMetadata = null) => {
             found.user,
           );
         }
-      }
-      // Nếu không có tên nhưng có lastMetadata chứa thông tin bác sĩ, ưu tiên dùng metadata
-      else if (lastMetadata && lastMetadata.includes("doctor=")) {
+      } else if (lastMetadata && lastMetadata.includes("doctor=")) {
         const doctorNameMatch = lastMetadata.match(/doctor=([^|]+)/);
         if (doctorNameMatch && doctorNameMatch[1]) {
           const found = await findDoctorByName(doctorNameMatch[1]);
@@ -207,20 +224,6 @@ export const fetchIntentContext = async (parsed, lastMetadata = null) => {
           : null,
       ]);
 
-      console.log("\n=== DEBUG: BƯỚC 1 - TỪ CHAT CONTEXT HANDLER ===");
-      console.log(
-        "1. Clinic (Parse):",
-        parsed.clinicName,
-        "| DB:",
-        foundClinic?.clinicName || "NULL",
-      );
-      console.log(
-        "2. Specialty (Parse):",
-        parsed.specialtyName,
-        "| DB:",
-        foundSpecialty?.name || "NULL",
-      );
-
       if (
         parsed.specialtyName &&
         parsed.specialtyName.length >= 2 &&
@@ -241,12 +244,126 @@ export const fetchIntentContext = async (parsed, lastMetadata = null) => {
           specialtyDoctorsList = [];
         }
       }
-      console.log("=================================================\n");
       break;
     }
+
+    // ================== INTENT PERSONAL QUERY ==================
+    case "personal_query": {
+      console.log(`[DEBUG fetchIntentContext] personal_query triggered`);
+      console.log(`[DEBUG] reqUser:`, reqUser ? reqUser._id : "null");
+      console.log(`[DEBUG] parsed:`, parsed);
+
+      if (!reqUser || !reqUser._id) {
+        console.log(`[DEBUG] User not logged in, returning requiresLogin=true`);
+        return { requiresLogin: true };
+      }
+      const { personalEntity, doctorName, targetDate } = parsed;
+      console.log(
+        `[DEBUG] personalEntity=${personalEntity}, doctorName=${doctorName}, targetDate=${targetDate}`,
+      );
+
+      if (personalEntity === "appointments") {
+        let personalData = null;
+        // Ưu tiên: lọc theo cả ngày và bác sĩ (nếu có)
+        if (targetDate && doctorName && doctorName.length >= 2) {
+          console.log(`[DEBUG] Case: both targetDate and doctorName`);
+          const doctorFound = await findDoctorByName(doctorName);
+          if (doctorFound && doctorFound.user && doctorFound.doctorProfile) {
+            const doctorId = doctorFound.user._id;
+            console.log(`[DEBUG] Found doctorId=${doctorId}`);
+            let appointmentsByDate = await getUserAppointmentsByDate(
+              reqUser._id,
+              targetDate,
+              { limit: 10 },
+            );
+            console.log(
+              `[DEBUG] appointmentsByDate count: ${appointmentsByDate.length}`,
+            );
+            appointmentsByDate = appointmentsByDate.filter(
+              (app) => app.doctorId === doctorId.toString(),
+            );
+            console.log(
+              `[DEBUG] after doctor filter: ${appointmentsByDate.length}`,
+            );
+            personalData = {
+              items: appointmentsByDate,
+              filteredByDoctor: doctorFound.user.fullName,
+              filteredByDate: targetDate,
+            };
+          } else {
+            console.log(`[DEBUG] Doctor not found for name: ${doctorName}`);
+            personalData = { error: "DOCTOR_NOT_FOUND", doctorName };
+          }
+        }
+        // Chỉ lọc theo ngày
+        else if (targetDate) {
+          console.log(`[DEBUG] Case: only targetDate = ${targetDate}`);
+          const items = await getUserAppointmentsByDate(
+            reqUser._id,
+            targetDate,
+            { limit: 10 },
+          );
+          console.log(
+            `[DEBUG] getUserAppointmentsByDate returned ${items.length} items`,
+          );
+          personalData = { items, filteredByDate: targetDate };
+        }
+        // Chỉ lọc theo bác sĩ
+        else if (doctorName && doctorName.length >= 2) {
+          console.log(`[DEBUG] Case: only doctorName = ${doctorName}`);
+          const doctorFound = await findDoctorByName(doctorName);
+          if (doctorFound && doctorFound.user && doctorFound.doctorProfile) {
+            const doctorId = doctorFound.user._id;
+            const items = await getUserAppointmentsByDoctor(
+              reqUser._id,
+              doctorId,
+              { limit: 10 },
+            );
+            console.log(
+              `[DEBUG] getUserAppointmentsByDoctor returned ${items.length} items`,
+            );
+            personalData = {
+              items,
+              filteredByDoctor: doctorFound.user.fullName,
+            };
+          } else {
+            console.log(`[DEBUG] Doctor not found for name: ${doctorName}`);
+            personalData = { error: "DOCTOR_NOT_FOUND", doctorName };
+          }
+        }
+        // Không có bộ lọc: lấy tất cả
+        else {
+          console.log(`[DEBUG] Case: no filters, getting all appointments`);
+          const items = await getUserAppointments(reqUser._id, { limit: 10 });
+          console.log(
+            `[DEBUG] getUserAppointments returned ${items.length} items`,
+          );
+          personalData = { items };
+        }
+
+        console.log(
+          `[DEBUG] final personalData:`,
+          JSON.stringify(personalData, null, 2),
+        );
+        return { personalData, requiresLogin: false };
+      }
+
+      // Các personalEntity khác (prescriptions, results, records, payments) có thể bổ sung sau
+      console.log(`[DEBUG] Unsupported personalEntity: ${personalEntity}`);
+      return {
+        personalData: {
+          error: "UNSUPPORTED_ENTITY",
+          message: `Chức năng cho ${personalEntity} đang được phát triển.`,
+        },
+        requiresLogin: false,
+      };
+    }
+
+    default:
+      break;
   }
 
-  return {
+  const result = {
     existenceResult,
     specialtyCheckResult,
     doctorInfo,
@@ -255,5 +372,7 @@ export const fetchIntentContext = async (parsed, lastMetadata = null) => {
     specialtyDoctorsList,
     bookingRequest,
     targetDoctorInfo,
+    personalData,
   };
+  return result;
 };

@@ -12,6 +12,9 @@ export const buildAdaptivePrompt = ({
   currentSpec,
   intent,
   lastMetadata,
+  userLoggedIn,
+  filterDoctorName,
+  filterDate,
   existenceResult,
   specialtyCheckResult,
   doctorInfo,
@@ -20,7 +23,20 @@ export const buildAdaptivePrompt = ({
   specialtyDoctorsList,
   bookingRequest,
   targetDoctorInfo,
+  personalData,
 }) => {
+  // ===== DEBUG LOG =====
+  console.log(
+    `[DEBUG buildAdaptivePrompt] Intent: ${intent}, userLoggedIn: ${userLoggedIn}`,
+  );
+  console.log(
+    `[DEBUG buildAdaptivePrompt] personalData:`,
+    JSON.stringify(personalData, null, 2),
+  );
+  console.log(
+    `[DEBUG buildAdaptivePrompt] filterDate: ${filterDate}, filterDoctorName: ${filterDoctorName}`,
+  );
+
   // ==========================================================================
   // 1. ĐỊNH NGHĨA NHÂN VẬT CHUYÊN GIA & GIỌNG VĂN CHUẨN Y KHOA (GLOBAL PERSONA)
   // ==========================================================================
@@ -63,7 +79,7 @@ QUY TẮC TRÌNH BÀY UI/UX THỊ GIÁC:
   let stateSummary = "general_conversation";
 
   // ==========================================================================
-  // 3. LỚP PHÒNG NGỰ RANH GIỚI NGHIỆP VỤ (BOUNDARY VIOLATIONS)
+  // 3. LỚP PHÒNG NGỰ RANH GIỚI NGHIỆP VỤ (BOUNDARY VIOLATIONS) + PERSONAL QUERY
   // ==========================================================================
 
   if (intent === "off_topic") {
@@ -75,17 +91,84 @@ QUY TẮC TRÌNH BÀY UI/UX THỊ GIÁC:
     taskContext = `NHIỆM VỤ ĐẶC BIỆT: Từ chối khéo léo. Giải thích theo quy định của Bộ Y tế, chuyên viên/hệ thống không được phép kê đơn thuốc hoặc chỉ định liều lượng qua mạng khi chưa thăm khám trực tiếp. Hướng dẫn họ đến viện để bác sĩ chẩn đoán. Có thể dùng CTA mời đặt lịch khám trực tiếp.`;
     stateSummary = "rejected_prescription";
   } else if (intent === "personal_query") {
-    dataContext = `❌ YÊU CẦU BẢO MẬT KHÔNG GIAN CÔNG KHAI: Người dùng đang cố gắng truy vấn dữ liệu cá nhân (lịch sử khám, thông tin cá nhân, đơn thuốc, lịch hẹn, v.v.).`;
-
-    taskContext = `NHIỆM VỤ ĐẶC BIỆT (NGẮT MẠCH BẢO MẬT):
+    // XỬ LÝ PERSONAL QUERY (ĐÃ LOGIN HOẶC CHƯA)
+    if (!userLoggedIn) {
+      // Chưa đăng nhập – từ chối và hướng dẫn login
+      dataContext = `❌ YÊU CẦU BẢO MẬT KHÔNG GIAN CÔNG KHAI: Người dùng đang cố gắng truy vấn dữ liệu cá nhân (lịch hẹn, đơn thuốc, ...).`;
+      taskContext = `NHIỆM VỤ ĐẶC BIỆT (NGẮT MẠCH BẢO MẬT):
 1. Khéo léo từ chối việc cung cấp thông tin trực tiếp trên khung chat này. Giải thích rằng để bảo vệ quyền riêng tư và bảo mật y tế tuyệt đối cho khách hàng, hệ thống DOCGO không hiển thị hồ sơ cá nhân tại khung tư vấn mở.
 2. CALL-TO-ACTION (CTA) ĐIỀU HƯỚNG: Hướng dẫn chi tiết người dùng: "Nếu anh/chị đã từng đặt lịch hoặc thăm khám trên DOCGO, vui lòng nhấn vào nút **Đăng nhập** ở góc màn hình, sau đó truy cập mục **Hồ sơ cá nhân** hoặc **Lịch sử khám** để xem chi tiết ạ."
 3. TUYỆT ĐỐI không chốt lịch hẹn khám ở câu này, chỉ tập trung giải quyết vấn đề đăng nhập.`;
+      stateSummary = "rejected_personal_login_required";
+    } else {
+      // Đã đăng nhập – xử lý dữ liệu từ personalData
+      const appointments = personalData?.items || [];
+      const doctorFilter = personalData?.filteredByDoctor || filterDoctorName;
+      const dateFilter = personalData?.filteredByDate || filterDate;
 
-    stateSummary = "rejected_personal_login_required";
-  }
-  // ======================== INTENT MỚI: ĐẶT LỊCH KHÁM ========================
-  else if (intent === "booking_request") {
+      // Format ngày hiển thị (dd/mm/yyyy)
+      let displayDate = "";
+      if (dateFilter) {
+        const d = new Date(dateFilter);
+        if (!isNaN(d.getTime())) {
+          displayDate = `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}/${d.getFullYear()}`;
+        }
+      }
+
+      if (personalData?.error === "DOCTOR_NOT_FOUND") {
+        dataContext = `❌ Không tìm thấy bác sĩ có tên "${personalData.doctorName}" trong hệ thống.`;
+        taskContext = `Thông báo lịch sự rằng chưa tìm thấy bác sĩ này, đề nghị kiểm tra lại tên hoặc cung cấp thêm thông tin. KHÔNG CTA đặt lịch.`;
+        stateSummary = "personal_appointments_doctor_not_found";
+      } else if (appointments.length === 0) {
+        // Không có lịch hẹn
+        if (doctorFilter && dateFilter) {
+          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị với bác sĩ **${doctorFilter}** vào ngày **${displayDate}**: **Không có lịch hẹn nào**.`;
+          taskContext = `Thông báo rằng không có lịch hẹn với bác sĩ này vào ngày đó. Hỏi xem có muốn đặt lịch mới không.`;
+          stateSummary = `personal_appointments_empty|doctor=${doctorFilter}|date=${dateFilter}`;
+        } else if (dateFilter) {
+          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị vào ngày **${displayDate}**: **Không có lịch hẹn nào**.`;
+          taskContext = `Thông báo rằng không có lịch hẹn trong ngày này. Hỏi xem có muốn đặt lịch mới không.`;
+          stateSummary = `personal_appointments_empty|date=${dateFilter}`;
+        } else if (doctorFilter) {
+          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị với bác sĩ **${doctorFilter}**: **Không có lịch hẹn nào**.`;
+          taskContext = `Thông báo chưa có lịch với bác sĩ này. Hỏi xem có muốn đặt lịch mới không.`;
+          stateSummary = `personal_appointments_empty|doctor=${doctorFilter}`;
+        } else {
+          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị: **Không có lịch hẹn nào**.`;
+          taskContext = `Thông báo nhẹ nhàng rằng chưa có lịch hẹn. Hỏi xem có muốn đặt lịch mới không.`;
+          stateSummary = "personal_appointments_empty";
+        }
+      } else {
+        // Có lịch hẹn – tạo danh sách
+        const appointmentLines = appointments
+          .map((app, idx) => {
+            const timeInfo = app.time ? ` lúc ${app.time}` : "";
+            const cancelInfo = app.cancellationReason
+              ? ` (Lý do hủy: ${app.cancellationReason})`
+              : "";
+            return `${idx + 1}. 📅 **${app.date}**${timeInfo} – 👨‍⚕️ **${app.doctorName}** (${app.specialty || "Chuyên khoa chung"}) – 🏥 ${app.clinicName} – **${app.statusText}**${cancelInfo}`;
+          })
+          .join("\n");
+
+        let title = "";
+        if (doctorFilter && dateFilter) {
+          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ VỚI **BÁC SĨ ${doctorFilter}** NGÀY **${displayDate}** (${appointments.length} lịch):`;
+        } else if (doctorFilter) {
+          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ VỚI **BÁC SĨ ${doctorFilter}** (${appointments.length} lịch gần nhất):`;
+        } else if (dateFilter) {
+          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ NGÀY **${displayDate}** (${appointments.length} lịch):`;
+        } else {
+          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ (${appointments.length} lịch gần nhất):`;
+        }
+
+        dataContext = `📅 ${title}\n${appointmentLines}`;
+        taskContext = `Trình bày danh sách lịch hẹn rõ ràng. Nếu có lịch đã hủy, có thể hỏi lý do nếu cần. Kết thúc bằng câu hỏi: "Anh/chị muốn xem chi tiết lịch hẹn nào không ạ? Hoặc đặt thêm lịch mới?"`;
+        stateSummary = doctorFilter
+          ? `personal_appointments|doctor=${doctorFilter}|date=${dateFilter || ""}|count=${appointments.length}`
+          : `personal_appointments|date=${dateFilter || ""}|count=${appointments.length}`;
+      }
+    }
+  } else if (intent === "booking_request") {
     const doctorNameHint =
       targetDoctorInfo?.fullName ||
       lastMetadata?.match(/doctor=([^|]+)/)?.[1] ||
@@ -299,7 +382,7 @@ ${hasContext ? "**Đặc biệt:** Vì trước đó em đã tư vấn về bác
       stateSummary = "check_existence|not_found";
     }
   } else {
-    // ========== 5. MẶC ĐỊNH (TƯ VẤN TRIỆU CHỨNG, BỆNH LÝ, TÌM KIẾM CHUNG) ==========
+    // ========== MẶC ĐỊNH (TƯ VẤN TRIỆU CHỨNG, BỆNH LÝ, TÌM KIẾM CHUNG) ==========
     const specialtyList = specialties.map((s) => `- ${s.name}`).join("\n");
     const displaySpec =
       currentSpec === "Nội tổng quát"
@@ -335,7 +418,7 @@ ${hasContext ? "**Đặc biệt:** Vì trước đó em đã tư vấn về bác
   // ==========================================================================
   // 6. RÁP TOÀN BỘ THÀNH CHUỖI SYSTEM INSTRUCTION & ÉP CHUẨN ĐẦU RA JSON
   // ==========================================================================
-  return `${BASE_PERSONA}
+  const finalPrompt = `${BASE_PERSONA}
 
 ==============================================================================
 DANH SÁCH TOÀN BỘ CHUYÊN KHOA HỆ THỐNG HỖ TRỢ (THAM KHẢO PHÂN LOẠI BỆNH):
@@ -360,4 +443,8 @@ RÀNG BUỘC KỸ THUẬT TUYỆT ĐỐI (STRICT COMPLIANCE):
   "state_summary": "${stateSummary}"
 }
 `;
+  console.log(
+    `[DEBUG buildAdaptivePrompt] Final prompt length: ${finalPrompt.length}`,
+  );
+  return finalPrompt;
 };

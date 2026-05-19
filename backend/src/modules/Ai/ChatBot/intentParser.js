@@ -1,12 +1,11 @@
-// ============================================================================
-// BỘ TỪ KHÓA DỪNG (STOP-WORDS) ĐƯỢC TỐI ƯU HÓA
-// ============================================================================
+// ============================================================
+// backend/src/utils/intentParser.js
+// ============================================================
 import { STOP_WORDS } from "../../../utils/STOP_WORDS.js";
 
-// 1. NHẬN DIỆN Ý ĐỊNH (INTENT DETECTION)
+// ==================== 1. NHẬN DIỆN Ý ĐỊNH (ĐÃ SỬA THỨ TỰ) ====================
 const detectIntent = (lowerText) => {
-  // ======================== INTENT MỚI: ĐẶT LỊCH KHÁM (CAO NHẤT) ========================
-  // SỬA: Bỏ dấu ^, thêm các mẫu "cách đặt lịch", "hướng dẫn đặt lịch", "làm thế nào để đặt lịch", "cho tôi hỏi đặt lịch"
+  // 1. booking_request (cao nhất)
   if (
     /(đặt lịch|đặt lịch khám|đặt hẹn|đặt lịch hẹn|muốn đặt lịch|cần đặt lịch|đăng ký khám|đăng ký lịch khám|book lịch|book khám|cách đặt lịch|hướng dẫn đặt lịch|làm thế nào để đặt lịch|cho tôi hỏi đặt lịch)(\s+với\s+(bác sĩ|bs)\s+([a-zà-ỹ\s]+))?/i.test(
       lowerText,
@@ -15,7 +14,7 @@ const detectIntent = (lowerText) => {
     return "booking_request";
   }
 
-  // ----- INTENT MỚI: TÌM BÁC SĨ THEO BỆNH VIỆN + CHUYÊN KHOA -----
+  // 2. find_doctors_by_clinic_specialty
   if (
     /(ở|tại)\s+(bệnh viện|phòng khám)\s+([^,?.!]+?)\s+(có|có những)\s+(bác sĩ|bs)\s+(chuyên khoa|khoa)\s+([^,?.!]+?)\s*(nào|không)?/i.test(
       lowerText,
@@ -27,7 +26,7 @@ const detectIntent = (lowerText) => {
     return "find_doctors_by_clinic_specialty";
   }
 
-  // ----- INTENT: HỎI GIÁ KHÁM CỦA BÁC SĨ -----
+  // 3. doctor_fee
   if (
     /(giá khám|phí khám|khám giá bao nhiêu|chi phí khám|bao nhiêu tiền)\s+(của\s+)?(bác sĩ|bs)\s+([a-zà-ỹ\s]+)/i.test(
       lowerText,
@@ -36,7 +35,7 @@ const detectIntent = (lowerText) => {
     return "doctor_fee";
   }
 
-  // ----- INTENT: HỎI THÔNG TIN BÁC SĨ -----
+  // 4. doctor_info
   if (
     /(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,})/i.test(lowerText) &&
     /(thông tin|giới thiệu|profile|là ai|tốt không|khám gì|chuyên khoa gì)/i.test(
@@ -46,7 +45,7 @@ const detectIntent = (lowerText) => {
     return "doctor_info";
   }
 
-  // ----- INTENT: BÁC SĨ THUỘC CHUYÊN KHOA NÀO -----
+  // 5. doctor_specialty
   if (
     /(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,}?)\s+(thuộc chuyên khoa|chuyên khoa gì|là khoa gì|chuyên ngành gì)/i.test(
       lowerText,
@@ -55,7 +54,7 @@ const detectIntent = (lowerText) => {
     return "doctor_specialty";
   }
 
-  // ----- INTENT: BÁC SĨ CÓ TRONG BỆNH VIỆN Y KHÔNG -----
+  // 6. doctor_in_clinic
   if (
     /(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,}?)\s+(có trong|có ở|làm tại|công tác tại)\s+(bệnh viện|phòng khám)\s+([^,?.!]+?)\s*(không|chưa|hả|ko)?/i.test(
       lowerText,
@@ -64,7 +63,7 @@ const detectIntent = (lowerText) => {
     return "doctor_in_clinic";
   }
 
-  // ----- INTENT: BỆNH VIỆN Z CÓ BÁC SĨ M KHÔNG -----
+  // 7. clinic_has_doctor
   if (
     /(bệnh viện|phòng khám)\s+([^,?.!]+?)\s+(có|không có)\s+(bác sĩ|bs)\s+([a-zà-ỹ\s]{2,}?)\s*(không|chưa|ko)?/i.test(
       lowerText,
@@ -73,7 +72,7 @@ const detectIntent = (lowerText) => {
     return "clinic_has_doctor";
   }
 
-  // ----- INTENT: KIỂM TRA TỒN TẠI BỆNH VIỆN (chỉ khi có tên cụ thể) -----
+  // 8. check_hospital_existence
   if (
     /(có|thấy|biết|tìm thấy)\s+(bệnh viện|phòng khám|cơ sở y tế)\s+(?!nào|gì|đâu)([a-zà-ỹ\s]{2,}?)\s+(không|chưa|hả|ko)/i.test(
       lowerText,
@@ -82,7 +81,7 @@ const detectIntent = (lowerText) => {
     return "check_hospital_existence";
   }
 
-  // ----- INTENT: KIỂM TRA CHUYÊN KHOA TRONG BỆNH VIỆN -----
+  // 9. check_specialty_in_clinic
   if (
     /(bệnh viện|phòng khám|cơ sở y tế)\s+.+\s+(có|với|bao gồm)\s+(chuyên khoa|khoa)\s+.+\s+(không|chưa|hả|ko)/i.test(
       lowerText,
@@ -94,24 +93,8 @@ const detectIntent = (lowerText) => {
     return "check_specialty_in_clinic";
   }
 
-  // ----- INTENT: CHẶN CÂU HỎI NGOÀI LỀ -----
-  if (
-    /(chó|cún|mèo|vật nuôi|thú cưng|thú y|động vật|heo|lợn|gà|vịt|chim|cá|chuột|hamster|bò|trâu|ngựa|cây cảnh|thời tiết|nấu ăn|bóng đá|chính trị)/.test(
-      lowerText,
-    )
-  ) {
-    return "off_topic";
-  }
-  // ----- INTENT: CHẶN YÊU CẦU KÊ ĐƠN THUỐC -----
-  if (
-    /(kê đơn|kê thuốc|mua thuốc|bán thuốc|uống thuốc gì|liều thuốc|cho thuốc)/.test(
-      lowerText,
-    )
-  ) {
-    return "prescription_request";
-  }
-
-  // ----- INTENT: CÂU HỎI CÁ NHÂN -----
+  // ========== QUAN TRỌNG: PERSONAL_QUERY PHẢI Ở TRƯỚC OFF_TOPIC ==========
+  // 10. personal_query (câu hỏi về dữ liệu cá nhân)
   if (
     /(lịch hẹn|cuộc hẹn|lịch khám|kết quả|đơn thuốc|toa thuốc|hồ sơ|bảo hiểm|thanh toán)/.test(
       lowerText,
@@ -120,7 +103,25 @@ const detectIntent = (lowerText) => {
     return "personal_query";
   }
 
-  // ----- INTENT: TÌM KIẾM DỊCH VỤ CHUNG -----
+  // 11. off_topic (các chủ đề ngoài y tế con người)
+  if (
+    /(chó|cún|mèo|vật nuôi|thú cưng|thú y|động vật|heo|lợn|gà|vịt|chim|cá|chuột|hamster|bò|trâu|ngựa|cây cảnh|thời tiết|nấu ăn|bóng đá|chính trị)/.test(
+      lowerText,
+    )
+  ) {
+    return "off_topic";
+  }
+
+  // 12. prescription_request
+  if (
+    /(kê đơn|kê thuốc|mua thuốc|bán thuốc|uống thuốc gì|liều thuốc|cho thuốc)/.test(
+      lowerText,
+    )
+  ) {
+    return "prescription_request";
+  }
+
+  // 13. search_service
   if (
     /(bệnh viện|phòng khám|cơ sở y tế|bác sĩ|bs|chuyên khoa)/.test(lowerText)
   ) {
@@ -130,14 +131,14 @@ const detectIntent = (lowerText) => {
   return "general_symptom";
 };
 
-// 2. BÓC TÁCH THỰC THỂ (ENTITY EXTRACTION) – ĐÃ SỬA
+// ==================== 2. BÓC TÁCH THỰC THỂ ====================
 const extractEntities = (originalText) => {
   let clinicName = null;
   let specialtyName = null;
   let doctorName = null;
   let preferGood = false;
 
-  // [SURGICAL FIX]: Thêm (?<!đa\s+) để không cho phép từ 'khoa' trong 'đa khoa' kích hoạt ngắt Lookahead
+  // Clinic name
   const clinicMatch = originalText.match(
     /(?:bệnh viện|phòng khám|tại|ở)\s+([^,?.!]+?)(?=\s*(?:[,?.!])?\s+(?:có|bác sĩ|bs|(?<!đa\s+)\bkhoa\b|chuyên\s+khoa|không|nào|hả|chưa|ko|ở|tại)|$)/i,
   );
@@ -147,7 +148,7 @@ const extractEntities = (originalText) => {
     clinicName = raw;
   }
 
-  // [SURGICAL FIX]: Thêm (?<!đa\s+)\b để ép Regex bỏ qua chữ 'khoa' thuộc cụm mô tả 'đa khoa' của bệnh viện
+  // Specialty name
   const specMatch = originalText.match(
     /(?<!đa\s+)\b(?:chuyên\s+khoa|khoa)\s+([^,?.!]+?)(?=\s*(?:[,?.!])?\s+(?:có|bác sĩ|bs|không|giỏi|tốt|nào|hả|chưa|ko|ở|tại)|$)/i,
   );
@@ -157,7 +158,7 @@ const extractEntities = (originalText) => {
     specialtyName = raw;
   }
 
-  // Lấy tên Bác sĩ (Giữ nguyên toàn bộ phần phía dưới)
+  // Doctor name
   const docMatch = originalText.match(/(?:bác sĩ|bs|doctor)\s+(.*)/i);
   if (docMatch && docMatch[1]) {
     const words = docMatch[1].trim().split(/\s+/);
@@ -191,7 +192,7 @@ const extractEntities = (originalText) => {
   return { clinicName, specialtyName, doctorName, preferGood };
 };
 
-// 3. TRÍCH XUẤT ĐỊA ĐIỂM
+// ==================== 3. TRÍCH XUẤT ĐỊA ĐIỂM ====================
 export const extractLocation = (text) => {
   if (!text) return null;
   const cleanedText = text
@@ -204,14 +205,138 @@ export const extractLocation = (text) => {
   return locationMatch ? locationMatch[1].trim() : cleanedText;
 };
 
-// 4. HÀM EXPORT parseQuery
+// ==================== 4. TRÍCH XUẤT THỰC THỂ CÁ NHÂN ====================
+const extractPersonalEntity = (text) => {
+  const lower = text.toLowerCase();
+  if (/(lịch hẹn|lịch khám|các cuộc hẹn|danh sách lịch)/i.test(lower))
+    return "appointments";
+  if (/(đơn thuốc|toa thuốc)/i.test(lower)) return "prescriptions";
+  if (/(kết quả khám|kết quả xét nghiệm)/i.test(lower)) return "results";
+  if (/(hồ sơ bệnh án|hồ sơ sức khỏe)/i.test(lower)) return "records";
+  if (/(thanh toán|viện phí|hóa đơn)/i.test(lower)) return "payments";
+  return "general";
+};
+
+// ==================== 5. TRÍCH XUẤT NGÀY THÁNG (SỬA PATTERN CHO PHÉP 1-2 CHỮ SỐ) ====================
+const extractDateFromQuery = (text) => {
+  console.log(`[DEBUG extractDateFromQuery] Input text: "${text}"`);
+  const lower = text.toLowerCase();
+  const today = new Date();
+  const todayUTC = new Date(
+    Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()),
+  );
+
+  // Relative dates
+  if (/(hôm nay|today)/i.test(lower)) {
+    const result = todayUTC.toISOString().split("T")[0];
+    console.log(`[DEBUG extractDateFromQuery] Matched "hôm nay" -> ${result}`);
+    return result;
+  }
+  if (/(ngày mai|tomorrow)/i.test(lower)) {
+    const tomorrow = new Date(todayUTC);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const result = tomorrow.toISOString().split("T")[0];
+    console.log(`[DEBUG extractDateFromQuery] Matched "ngày mai" -> ${result}`);
+    return result;
+  }
+  if (/(hôm qua|yesterday)/i.test(lower)) {
+    const yesterday = new Date(todayUTC);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const result = yesterday.toISOString().split("T")[0];
+    console.log(`[DEBUG extractDateFromQuery] Matched "hôm qua" -> ${result}`);
+    return result;
+  }
+
+  // Pattern "ngày dd/mm/yyyy" hoặc "ngày d/m/yyyy" (hỗ trợ 1 hoặc 2 chữ số)
+  let match = text.match(/ngày\s+(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i);
+  if (match) {
+    console.log(
+      `[DEBUG extractDateFromQuery] Matched pattern "ngày dd/mm/yyyy":`,
+      match,
+    );
+    let [_, day, month, year] = match;
+    day = day.padStart(2, "0");
+    month = month.padStart(2, "0");
+    const result = `${year}-${month}-${day}`;
+    console.log(`[DEBUG extractDateFromQuery] Returning: ${result}`);
+    return result;
+  }
+
+  // Pattern dd/mm/yyyy hoặc d/m/yyyy (không có "ngày")
+  match = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (match) {
+    console.log(
+      `[DEBUG extractDateFromQuery] Matched pattern "dd/mm/yyyy":`,
+      match,
+    );
+    let [_, day, month, year] = match;
+    day = day.padStart(2, "0");
+    month = month.padStart(2, "0");
+    const result = `${year}-${month}-${day}`;
+    console.log(`[DEBUG extractDateFromQuery] Returning: ${result}`);
+    return result;
+  }
+
+  // Pattern dd/mm (không năm) -> dùng năm hiện tại
+  match = text.match(/(\d{1,2})[\/\-](\d{1,2})(?![\/\-\d])/);
+  if (match) {
+    console.log(`[DEBUG extractDateFromQuery] Matched pattern "dd/mm":`, match);
+    let [_, day, month] = match;
+    day = day.padStart(2, "0");
+    month = month.padStart(2, "0");
+    const year = today.getFullYear();
+    const result = `${year}-${month}-${day}`;
+    console.log(
+      `[DEBUG extractDateFromQuery] Returning (current year): ${result}`,
+    );
+    return result;
+  }
+
+  // Pattern "ngày X tháng Y" hoặc "ngày X tháng Y năm Z"
+  match = text.match(
+    /ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})(?:\s+năm\s+(\d{4}))?/i,
+  );
+  if (match) {
+    console.log(
+      `[DEBUG extractDateFromQuery] Matched pattern "ngày X tháng Y":`,
+      match,
+    );
+    let [_, day, month, year] = match;
+    day = day.padStart(2, "0");
+    month = month.padStart(2, "0");
+    if (!year) year = today.getFullYear();
+    const result = `${year}-${month}-${day}`;
+    console.log(`[DEBUG extractDateFromQuery] Returning: ${result}`);
+    return result;
+  }
+
+  console.log(
+    `[DEBUG extractDateFromQuery] No pattern matched, returning null`,
+  );
+  return null;
+};
+
+// ==================== 6. HÀM PARSE QUERY CHÍNH ====================
 export const parseQuery = (message) => {
+  console.log(`[DEBUG parseQuery] Message: "${message}"`);
   if (!message || typeof message !== "string") {
     return { intent: "unknown", requiresDbQuery: false };
   }
 
   const intent = detectIntent(message.toLowerCase());
   const entities = extractEntities(message);
+  let personalEntity = null;
+  let targetDate = null;
+
+  if (intent === "personal_query") {
+    personalEntity = extractPersonalEntity(message);
+    if (personalEntity === "appointments") {
+      targetDate = extractDateFromQuery(message);
+      console.log(
+        `[DEBUG parseQuery] targetDate after extraction: ${targetDate}`,
+      );
+    }
+  }
 
   const requiresDbQuery =
     intent === "search_service" ||
@@ -228,9 +353,14 @@ export const parseQuery = (message) => {
     !!entities.specialtyName ||
     !!entities.doctorName;
 
-  return {
+  const result = {
     intent,
     ...entities,
+    personalEntity,
+    targetDate,
     requiresDbQuery,
   };
+
+  console.log(`[DEBUG parseQuery] Returning:`, JSON.stringify(result, null, 2));
+  return result;
 };

@@ -17,6 +17,7 @@ import {
   getUserAppointmentsByDoctor,
   getUserAppointmentsByDate,
   getUserPrescriptions,
+  getUserMedicalRecords,
 } from "./PersonalDataService.js";
 
 // ============================================================================
@@ -366,6 +367,17 @@ export const fetchIntentContext = async (
         return {
           personalData: { items },
           personalEntity: "prescriptions",
+          requiresLogin: false,
+        };
+      } else if (personalEntity === "records") {
+        console.log(`[DEBUG] Fetching medical records for user ${reqUser._id}`);
+        const items = await getUserMedicalRecords(reqUser._id);
+        console.log(
+          `[DEBUG] getUserMedicalRecords returned ${items.length} records`,
+        );
+        return {
+          personalData: { items },
+          personalEntity: "records",
           requiresLogin: false,
         };
       }

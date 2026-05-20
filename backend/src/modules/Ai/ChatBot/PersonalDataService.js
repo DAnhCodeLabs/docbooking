@@ -9,6 +9,7 @@ import User from "../../../models/User.js";
 import DoctorProfile from "../../../models/DoctorProfile.js";
 import ClinicLead from "../../../models/ClinicLead.js";
 import MedicalConsultation from "../../../models/MedicalConsultation.js";
+import MedicalRecord from "../../../models/MedicalRecord.js";
 
 /**
  * Private: Lấy và format appointments theo filter
@@ -63,23 +64,17 @@ const _fetchAppointments = async (userId, filter = {}, options = {}) => {
   const formatted = appointments.map((app) => {
     const doctor = app.doctor || {};
     const doctorProfile = doctor.doctorProfile || {};
-
-    // Lấy chuyên khoa
     let specialtyName = null;
     if (doctorProfile.specialty) {
       specialtyName =
         doctorProfile.specialty.name || doctorProfile.specialty.toString();
     }
-
-    // Lấy tên phòng khám
     let clinicName = null;
     if (doctorProfile.clinicId && doctorProfile.clinicId.clinicName) {
       clinicName = doctorProfile.clinicId.clinicName;
     } else if (doctorProfile.customClinicName) {
       clinicName = doctorProfile.customClinicName;
     }
-
-    // Lấy ngày và giờ từ slot và schedule
     let dateStr = null;
     let timeStr = null;
     if (app.slot) {
@@ -91,8 +86,6 @@ const _fetchAppointments = async (userId, filter = {}, options = {}) => {
         timeStr = `${app.slot.startTime} - ${app.slot.endTime}`;
       }
     }
-
-    // Bản đồ trạng thái
     const statusMap = {
       pending_payment: "Chờ thanh toán",
       confirmed: "Đã xác nhận",
@@ -113,6 +106,9 @@ const _fetchAppointments = async (userId, filter = {}, options = {}) => {
       statusText,
       clinicName: clinicName || "Chưa cập nhật",
       cancellationReason: app.cancellationReason || null,
+      // === THÊM 2 DÒNG MỚI ===
+      paymentStatus: app.paymentStatus || null, // "pending", "paid", "failed"
+      paymentMethod: app.paymentMethod || null, // "online", "offline"
     };
   });
 
@@ -285,6 +281,58 @@ export const getUserPrescriptions = async (userId, options = {}) => {
     return formatted;
   } catch (error) {
     console.error(`[getUserPrescriptions] DB error: ${error.message}`);
+    return [];
+  }
+};
+
+/**
+ * Lấy danh sách hồ sơ bệnh án của người dùng
+ * @param {string|ObjectId} userId
+ * @returns {Promise<Array>} - Mảng các object đã format (che giấu thông tin nhạy cảm)
+ */
+export const getUserMedicalRecords = async (userId) => {
+  console.log(`[DEBUG getUserMedicalRecords] userId=${userId}`);
+  try {
+    const records = await MedicalRecord.find({ user: userId, isDeleted: false })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    console.log(`[DEBUG getUserMedicalRecords] Found ${records.length} records`);
+
+    const formatted = records.map(record => {
+      // Che giấu CCCD: chỉ lấy 4 số cuối
+      let cccdDisplay = 'Không có';
+      if (record.cccd && record.cccd.length >= 4) {
+        cccdDisplay = `*${record.cccd.slice(-4)}`;
+      } else if (record.cccd) {
+        cccdDisplay = '***';
+      }
+
+      // Che giấu số bảo hiểm: chỉ lấy 4 số cuối
+      let insuranceDisplay = 'Không có';
+      if (record.insurance && record.insurance.provider) {
+        const policy = record.insurance.policyNumber || '';
+        const policySuffix = policy.length >= 4 ? `*${policy.slice(-4)}` : (policy ? '***' : '');
+        insuranceDisplay = `${record.insurance.provider}${policySuffix ? ` (số: ${policySuffix})` : ''}`;
+      }
+
+      return {
+        id: record._id,
+        fullName: record.fullName,
+        phone: record.phone || 'Chưa cập nhật',
+        dateOfBirth: record.dateOfBirth,
+        gender: record.gender === 'male' ? 'Nam' : (record.gender === 'female' ? 'Nữ' : 'Khác'),
+        cccd: cccdDisplay,
+        address: record.address || 'Chưa cập nhật',
+        bloodGroup: record.bloodGroup || 'Chưa rõ',
+        allergies: record.allergies?.length ? record.allergies.join(', ') : 'Không có',
+        insurance: insuranceDisplay,
+        isDefault: record.isDefault || false,
+      };
+    });
+    return formatted;
+  } catch (error) {
+    console.error(`[getUserMedicalRecords] DB error: ${error.message}`);
     return [];
   }
 };

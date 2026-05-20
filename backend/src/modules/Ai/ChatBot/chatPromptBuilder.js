@@ -154,7 +154,27 @@ QUY TẮC TRÌNH BÀY UI/UX THỊ GIÁC:
               const cancelInfo = app.cancellationReason
                 ? ` (Lý do hủy: ${app.cancellationReason})`
                 : "";
-              return `${idx + 1}. 📅 **${app.date}**${timeInfo} – 👨‍⚕️ **${app.doctorName}** (${app.specialty || "Chuyên khoa chung"}) – 🏥 ${app.clinicName} – **${app.statusText}**${cancelInfo}`;
+
+              // Xây dựng chuỗi thanh toán
+              let paymentText = "";
+              if (app.paymentStatus === "paid") {
+                const methodText =
+                  app.paymentMethod === "online" ? "online" : "offline";
+                paymentText = ` – 💳 Đã thanh toán (${methodText})`;
+              } else if (app.paymentStatus === "pending") {
+                const methodHint =
+                  app.paymentMethod === "online"
+                    ? "chờ chuyển khoản"
+                    : "thanh toán tại quầy";
+                paymentText = ` – 💳 Chưa thanh toán (${methodHint})`;
+              } else if (app.paymentStatus === "failed") {
+                paymentText = ` – 💳 Thanh toán thất bại`;
+              } else {
+                // Nếu không có thông tin thanh toán (app cũ), không hiển thị
+                paymentText = "";
+              }
+
+              return `${idx + 1}. 📅 **${app.date}**${timeInfo} – 👨‍⚕️ **${app.doctorName}** (${app.specialty || "Chuyên khoa chung"}) – 🏥 ${app.clinicName} – **${app.statusText}**${cancelInfo}${paymentText}`;
             })
             .join("\n");
 
@@ -222,6 +242,33 @@ QUY TẮC TRÌNH BÀY UI/UX THỊ GIÁC:
           stateSummary = hasDateFilter
             ? `personal_prescriptions|date=${filterDate}|count=${prescriptions.length}`
             : `personal_prescriptions|count=${prescriptions.length}`;
+        }
+      } else if (personalEntityFromData === "records") {
+        const records = personalDataObj.items || [];
+        if (records.length === 0) {
+          dataContext = `📋 Anh/chị chưa có hồ sơ bệnh án nào trong hệ thống DOCGO.`;
+          taskContext = `Thông báo nhẹ nhàng và khuyến khích tạo hồ sơ bệnh án mới.`;
+          stateSummary = "personal_records_empty";
+        } else {
+          const recordLines = records
+            .map((rec, idx) => {
+              const defaultMark = rec.isDefault ? " (Mặc định)" : "";
+              const dobStr = rec.dateOfBirth
+                ? new Date(rec.dateOfBirth).toLocaleDateString("vi-VN")
+                : "Chưa rõ";
+              return `${idx + 1}. 👤 **${rec.fullName}**${defaultMark}
+   - 📅 Ngày sinh: ${dobStr} (${rec.gender})
+   - 📞 Điện thoại: ${rec.phone}
+   - 🆔 CCCD: ${rec.cccd}
+   - 🏠 Địa chỉ: ${rec.address}
+   - 🩸 Nhóm máu: ${rec.bloodGroup}
+   - 💊 Dị ứng: ${rec.allergies}
+   - 🏥 Bảo hiểm: ${rec.insurance}`;
+            })
+            .join("\n\n");
+          dataContext = `📋 **DANH SÁCH HỒ SƠ BỆNH ÁN CỦA ANH/CHỊ** (${records.length} hồ sơ):\n\n${recordLines}`;
+          taskContext = `Sau khi hiển thị danh sách, hỏi thêm: "Anh/chị muốn cập nhật hồ sơ nào hoặc thêm hồ sơ mới không ạ?"`;
+          stateSummary = `personal_records|count=${records.length}`;
         }
       }
       // -------------------- CÁC ENTITY KHÁC (CHƯA HỖ TRỢ) --------------------

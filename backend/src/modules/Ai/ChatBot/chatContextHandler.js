@@ -16,6 +16,7 @@ import {
   getUserAppointments,
   getUserAppointmentsByDoctor,
   getUserAppointmentsByDate,
+  getUserPrescriptions,
 } from "./PersonalDataService.js";
 
 // ============================================================================
@@ -262,6 +263,7 @@ export const fetchIntentContext = async (
         `[DEBUG] personalEntity=${personalEntity}, doctorName=${doctorName}, targetDate=${targetDate}`,
       );
 
+      // -------------------- APPOINTMENTS (giữ nguyên code cũ) --------------------
       if (personalEntity === "appointments") {
         let personalData = null;
         // Ưu tiên: lọc theo cả ngày và bác sĩ (nếu có)
@@ -348,16 +350,38 @@ export const fetchIntentContext = async (
         return { personalData, requiresLogin: false };
       }
 
-      // Các personalEntity khác (prescriptions, results, records, payments) có thể bổ sung sau
-      console.log(`[DEBUG] Unsupported personalEntity: ${personalEntity}`);
-      return {
-        personalData: {
-          error: "UNSUPPORTED_ENTITY",
-          message: `Chức năng cho ${personalEntity} đang được phát triển.`,
-        },
-        requiresLogin: false,
-      };
-    }
+      // -------------------- PRESCRIPTIONS (MỚI THÊM) --------------------
+      else if (personalEntity === "prescriptions") {
+        console.log(`[DEBUG] Fetching prescriptions for user ${reqUser._id}`);
+        let items;
+        if (targetDate) {
+          console.log(`[DEBUG] Filtering prescriptions by date: ${targetDate}`);
+          items = await getUserPrescriptions(reqUser._id, { targetDate });
+        } else {
+          items = await getUserPrescriptions(reqUser._id);
+        }
+        console.log(
+          `[DEBUG] getUserPrescriptions returned ${items.length} items`,
+        );
+        return {
+          personalData: { items },
+          personalEntity: "prescriptions",
+          requiresLogin: false,
+        };
+      }
+
+      // -------------------- CÁC ENTITY KHÁC (CHƯA HỖ TRỢ) --------------------
+      else {
+        console.log(`[DEBUG] Unsupported personalEntity: ${personalEntity}`);
+        return {
+          personalData: {
+            error: "UNSUPPORTED_ENTITY",
+            message: `Chức năng cho ${personalEntity} đang được phát triển.`,
+          },
+          requiresLogin: false,
+        };
+      }
+    } // end case personal_query
 
     default:
       break;

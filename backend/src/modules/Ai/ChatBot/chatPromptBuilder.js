@@ -24,6 +24,7 @@ export const buildAdaptivePrompt = ({
   bookingRequest,
   targetDoctorInfo,
   personalData,
+  personalEntity,
 }) => {
   // ===== DEBUG LOG =====
   console.log(
@@ -91,81 +92,143 @@ QUY TẮC TRÌNH BÀY UI/UX THỊ GIÁC:
     taskContext = `NHIỆM VỤ ĐẶC BIỆT: Từ chối khéo léo. Giải thích theo quy định của Bộ Y tế, chuyên viên/hệ thống không được phép kê đơn thuốc hoặc chỉ định liều lượng qua mạng khi chưa thăm khám trực tiếp. Hướng dẫn họ đến viện để bác sĩ chẩn đoán. Có thể dùng CTA mời đặt lịch khám trực tiếp.`;
     stateSummary = "rejected_prescription";
   } else if (intent === "personal_query") {
-    // XỬ LÝ PERSONAL QUERY (ĐÃ LOGIN HOẶC CHƯA)
+    // ===== XỬ LÝ KHI CHƯA ĐĂNG NHẬP =====
     if (!userLoggedIn) {
-      // Chưa đăng nhập – từ chối và hướng dẫn login
       dataContext = `❌ YÊU CẦU BẢO MẬT KHÔNG GIAN CÔNG KHAI: Người dùng đang cố gắng truy vấn dữ liệu cá nhân (lịch hẹn, đơn thuốc, ...).`;
       taskContext = `NHIỆM VỤ ĐẶC BIỆT (NGẮT MẠCH BẢO MẬT):
 1. Khéo léo từ chối việc cung cấp thông tin trực tiếp trên khung chat này. Giải thích rằng để bảo vệ quyền riêng tư và bảo mật y tế tuyệt đối cho khách hàng, hệ thống DOCGO không hiển thị hồ sơ cá nhân tại khung tư vấn mở.
 2. CALL-TO-ACTION (CTA) ĐIỀU HƯỚNG: Hướng dẫn chi tiết người dùng: "Nếu anh/chị đã từng đặt lịch hoặc thăm khám trên DOCGO, vui lòng nhấn vào nút **Đăng nhập** ở góc màn hình, sau đó truy cập mục **Hồ sơ cá nhân** hoặc **Lịch sử khám** để xem chi tiết ạ."
 3. TUYỆT ĐỐI không chốt lịch hẹn khám ở câu này, chỉ tập trung giải quyết vấn đề đăng nhập.`;
       stateSummary = "rejected_personal_login_required";
-    } else {
-      // Đã đăng nhập – xử lý dữ liệu từ personalData
-      const appointments = personalData?.items || [];
-      const doctorFilter = personalData?.filteredByDoctor || filterDoctorName;
-      const dateFilter = personalData?.filteredByDate || filterDate;
+    }
+    // ===== ĐÃ ĐĂNG NHẬP =====
+    else {
+      const personalEntityFromData = personalEntity; // từ intentData (có thể undefined)
+      const personalDataObj = personalData || {};
 
-      // Format ngày hiển thị (dd/mm/yyyy)
-      let displayDate = "";
-      if (dateFilter) {
-        const d = new Date(dateFilter);
-        if (!isNaN(d.getTime())) {
-          displayDate = `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}/${d.getFullYear()}`;
+      // -------------------- APPOINTMENTS (giữ nguyên code cũ) --------------------
+      if (
+        personalEntityFromData === "appointments" ||
+        !personalEntityFromData
+      ) {
+        // Nếu không có personalEntity, mặc định là appointments (tương thích ngược)
+        const appointments = personalDataObj.items || [];
+        const doctorFilter =
+          personalDataObj.filteredByDoctor || filterDoctorName;
+        const dateFilter = personalDataObj.filteredByDate || filterDate;
+
+        let displayDate = "";
+        if (dateFilter) {
+          const d = new Date(dateFilter);
+          if (!isNaN(d.getTime())) {
+            displayDate = `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}/${d.getFullYear()}`;
+          }
+        }
+
+        if (personalDataObj?.error === "DOCTOR_NOT_FOUND") {
+          dataContext = `❌ Không tìm thấy bác sĩ có tên "${personalDataObj.doctorName}" trong hệ thống.`;
+          taskContext = `Thông báo lịch sự rằng chưa tìm thấy bác sĩ này, đề nghị kiểm tra lại tên hoặc cung cấp thêm thông tin. KHÔNG CTA đặt lịch.`;
+          stateSummary = "personal_appointments_doctor_not_found";
+        } else if (appointments.length === 0) {
+          if (doctorFilter && dateFilter) {
+            dataContext = `📅 Dữ liệu lịch hẹn của anh/chị với bác sĩ **${doctorFilter}** vào ngày **${displayDate}**: **Không có lịch hẹn nào**.`;
+            taskContext = `Thông báo rằng không có lịch hẹn với bác sĩ này vào ngày đó. Hỏi xem có muốn đặt lịch mới không.`;
+            stateSummary = `personal_appointments_empty|doctor=${doctorFilter}|date=${dateFilter}`;
+          } else if (dateFilter) {
+            dataContext = `📅 Dữ liệu lịch hẹn của anh/chị vào ngày **${displayDate}**: **Không có lịch hẹn nào**.`;
+            taskContext = `Thông báo rằng không có lịch hẹn trong ngày này. Hỏi xem có muốn đặt lịch mới không.`;
+            stateSummary = `personal_appointments_empty|date=${dateFilter}`;
+          } else if (doctorFilter) {
+            dataContext = `📅 Dữ liệu lịch hẹn của anh/chị với bác sĩ **${doctorFilter}**: **Không có lịch hẹn nào**.`;
+            taskContext = `Thông báo chưa có lịch với bác sĩ này. Hỏi xem có muốn đặt lịch mới không.`;
+            stateSummary = `personal_appointments_empty|doctor=${doctorFilter}`;
+          } else {
+            dataContext = `📅 Dữ liệu lịch hẹn của anh/chị: **Không có lịch hẹn nào**.`;
+            taskContext = `Thông báo nhẹ nhàng rằng chưa có lịch hẹn. Hỏi xem có muốn đặt lịch mới không.`;
+            stateSummary = "personal_appointments_empty";
+          }
+        } else {
+          const appointmentLines = appointments
+            .map((app, idx) => {
+              const timeInfo = app.time ? ` lúc ${app.time}` : "";
+              const cancelInfo = app.cancellationReason
+                ? ` (Lý do hủy: ${app.cancellationReason})`
+                : "";
+              return `${idx + 1}. 📅 **${app.date}**${timeInfo} – 👨‍⚕️ **${app.doctorName}** (${app.specialty || "Chuyên khoa chung"}) – 🏥 ${app.clinicName} – **${app.statusText}**${cancelInfo}`;
+            })
+            .join("\n");
+
+          let title = "";
+          if (doctorFilter && dateFilter) {
+            title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ VỚI **BÁC SĨ ${doctorFilter}** NGÀY **${displayDate}** (${appointments.length} lịch):`;
+          } else if (doctorFilter) {
+            title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ VỚI **BÁC SĨ ${doctorFilter}** (${appointments.length} lịch gần nhất):`;
+          } else if (dateFilter) {
+            title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ NGÀY **${displayDate}** (${appointments.length} lịch):`;
+          } else {
+            title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ (${appointments.length} lịch gần nhất):`;
+          }
+
+          dataContext = `📅 ${title}\n${appointmentLines}`;
+          taskContext = `Trình bày danh sách lịch hẹn rõ ràng. Nếu có lịch đã hủy, có thể hỏi lý do nếu cần. Kết thúc bằng câu hỏi: "Anh/chị muốn xem chi tiết lịch hẹn nào không ạ? Hoặc đặt thêm lịch mới?"`;
+          stateSummary = doctorFilter
+            ? `personal_appointments|doctor=${doctorFilter}|date=${dateFilter || ""}|count=${appointments.length}`
+            : `personal_appointments|date=${dateFilter || ""}|count=${appointments.length}`;
         }
       }
+      // -------------------- PRESCRIPTIONS (MỚI THÊM) --------------------
+      else if (personalEntityFromData === "prescriptions") {
+        const prescriptions = personalDataObj.items || [];
+        const hasDateFilter = filterDate && filterDate.length > 0;
+        const dateDisplay = hasDateFilter
+          ? new Date(filterDate).toLocaleDateString("vi-VN")
+          : "";
 
-      if (personalData?.error === "DOCTOR_NOT_FOUND") {
-        dataContext = `❌ Không tìm thấy bác sĩ có tên "${personalData.doctorName}" trong hệ thống.`;
-        taskContext = `Thông báo lịch sự rằng chưa tìm thấy bác sĩ này, đề nghị kiểm tra lại tên hoặc cung cấp thêm thông tin. KHÔNG CTA đặt lịch.`;
-        stateSummary = "personal_appointments_doctor_not_found";
-      } else if (appointments.length === 0) {
-        // Không có lịch hẹn
-        if (doctorFilter && dateFilter) {
-          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị với bác sĩ **${doctorFilter}** vào ngày **${displayDate}**: **Không có lịch hẹn nào**.`;
-          taskContext = `Thông báo rằng không có lịch hẹn với bác sĩ này vào ngày đó. Hỏi xem có muốn đặt lịch mới không.`;
-          stateSummary = `personal_appointments_empty|doctor=${doctorFilter}|date=${dateFilter}`;
-        } else if (dateFilter) {
-          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị vào ngày **${displayDate}**: **Không có lịch hẹn nào**.`;
-          taskContext = `Thông báo rằng không có lịch hẹn trong ngày này. Hỏi xem có muốn đặt lịch mới không.`;
-          stateSummary = `personal_appointments_empty|date=${dateFilter}`;
-        } else if (doctorFilter) {
-          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị với bác sĩ **${doctorFilter}**: **Không có lịch hẹn nào**.`;
-          taskContext = `Thông báo chưa có lịch với bác sĩ này. Hỏi xem có muốn đặt lịch mới không.`;
-          stateSummary = `personal_appointments_empty|doctor=${doctorFilter}`;
+        if (prescriptions.length === 0) {
+          if (hasDateFilter) {
+            dataContext = `📋 Anh/chị không có đơn thuốc nào vào ngày **${dateDisplay}** trong hệ thống DOCGO.`;
+            taskContext = `Thông báo không có đơn thuốc trong ngày này. Hỏi xem có muốn xem tất cả đơn thuốc hoặc đặt lịch khám mới không.`;
+            stateSummary = `personal_prescriptions_empty|date=${filterDate}`;
+          } else {
+            dataContext = `📋 Anh/chị chưa có đơn thuốc nào trong hệ thống DOCGO.`;
+            taskContext = `Thông báo nhẹ nhàng rằng chưa có đơn thuốc. Hỏi xem có muốn đặt lịch khám để được bác sĩ kê đơn không.`;
+            stateSummary = "personal_prescriptions_empty";
+          }
         } else {
-          dataContext = `📅 Dữ liệu lịch hẹn của anh/chị: **Không có lịch hẹn nào**.`;
-          taskContext = `Thông báo nhẹ nhàng rằng chưa có lịch hẹn. Hỏi xem có muốn đặt lịch mới không.`;
-          stateSummary = "personal_appointments_empty";
-        }
-      } else {
-        // Có lịch hẹn – tạo danh sách
-        const appointmentLines = appointments
-          .map((app, idx) => {
-            const timeInfo = app.time ? ` lúc ${app.time}` : "";
-            const cancelInfo = app.cancellationReason
-              ? ` (Lý do hủy: ${app.cancellationReason})`
-              : "";
-            return `${idx + 1}. 📅 **${app.date}**${timeInfo} – 👨‍⚕️ **${app.doctorName}** (${app.specialty || "Chuyên khoa chung"}) – 🏥 ${app.clinicName} – **${app.statusText}**${cancelInfo}`;
-          })
-          .join("\n");
+          const prescriptionLines = prescriptions
+            .map((pres, idx) => {
+              const dateStr = pres.date
+                ? new Date(pres.date).toLocaleDateString("vi-VN")
+                : "Không rõ ngày";
+              const followUpStr = pres.followUpDate
+                ? `\n   - 🔔 **Tái khám:** ${new Date(pres.followUpDate).toLocaleDateString("vi-VN")}`
+                : "";
+              return (
+                `${idx + 1}. 🩺 **Ngày ${dateStr}** – 👨‍⚕️ **BS ${pres.doctorName}** (${pres.specialtyName})\n` +
+                `   - **Chẩn đoán:** ${pres.diagnosis}\n` +
+                `   - **Đơn thuốc:**\n     ${pres.prescriptionText}\n` +
+                `   - **Lời dặn:** ${pres.instructions || "Không có"}` +
+                followUpStr
+              );
+            })
+            .join("\n\n");
 
-        let title = "";
-        if (doctorFilter && dateFilter) {
-          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ VỚI **BÁC SĨ ${doctorFilter}** NGÀY **${displayDate}** (${appointments.length} lịch):`;
-        } else if (doctorFilter) {
-          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ VỚI **BÁC SĨ ${doctorFilter}** (${appointments.length} lịch gần nhất):`;
-        } else if (dateFilter) {
-          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ NGÀY **${displayDate}** (${appointments.length} lịch):`;
-        } else {
-          title = `DANH SÁCH LỊCH HẸN CỦA ANH/CHỊ (${appointments.length} lịch gần nhất):`;
-        }
+          let title = hasDateFilter
+            ? `📋 **DANH SÁCH ĐƠN THUỐC CỦA ANH/CHỊ NGÀY ${dateDisplay}** (${prescriptions.length} đơn):`
+            : `📋 **DANH SÁCH ĐƠN THUỐC CỦA ANH/CHỊ** (${prescriptions.length} đơn):`;
 
-        dataContext = `📅 ${title}\n${appointmentLines}`;
-        taskContext = `Trình bày danh sách lịch hẹn rõ ràng. Nếu có lịch đã hủy, có thể hỏi lý do nếu cần. Kết thúc bằng câu hỏi: "Anh/chị muốn xem chi tiết lịch hẹn nào không ạ? Hoặc đặt thêm lịch mới?"`;
-        stateSummary = doctorFilter
-          ? `personal_appointments|doctor=${doctorFilter}|date=${dateFilter || ""}|count=${appointments.length}`
-          : `personal_appointments|date=${dateFilter || ""}|count=${appointments.length}`;
+          dataContext = `${title}\n\n${prescriptionLines}`;
+          taskContext = `Sau khi hiển thị danh sách đơn thuốc, hỏi thêm: "Anh/chị muốn xem chi tiết đơn thuốc nào hoặc cần em hỗ trợ đặt lịch tái khám không ạ?"`;
+          stateSummary = hasDateFilter
+            ? `personal_prescriptions|date=${filterDate}|count=${prescriptions.length}`
+            : `personal_prescriptions|count=${prescriptions.length}`;
+        }
+      }
+      // -------------------- CÁC ENTITY KHÁC (CHƯA HỖ TRỢ) --------------------
+      else {
+        dataContext = `❌ Chức năng cho ${personalEntityFromData} đang được phát triển.`;
+        taskContext = `Thông báo chưa hỗ trợ, xin lỗi và đề nghị quay lại sau.`;
+        stateSummary = "personal_unsupported";
       }
     }
   } else if (intent === "booking_request") {

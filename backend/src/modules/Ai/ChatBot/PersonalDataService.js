@@ -8,6 +8,7 @@ import Schedule from "../../../models/Schedule.js";
 import User from "../../../models/User.js";
 import DoctorProfile from "../../../models/DoctorProfile.js";
 import ClinicLead from "../../../models/ClinicLead.js";
+import MedicalConsultation from "../../../models/MedicalConsultation.js";
 
 /**
  * Private: Lấy và format appointments theo filter
@@ -227,4 +228,63 @@ export const getUserAppointmentsByDate = async (userId, date, options = {}) => {
   const result = await _fetchAppointments(userId, filter, options);
   console.log(`[DEBUG] Final appointments count: ${result.length}`);
   return result;
+};
+
+
+/**
+ * Lấy danh sách đơn thuốc của bệnh nhân (có thể lọc theo ngày)
+ * @param {string|ObjectId} userId
+ * @param {Object} options - { targetDate (string YYYY-MM-DD) }
+ * @returns {Promise<Array>}
+ */
+export const getUserPrescriptions = async (userId, options = {}) => {
+  console.log(`[DEBUG getUserPrescriptions] userId=${userId}, options=`, options);
+  try {
+    let filter = { patientId: userId };
+    if (options.targetDate) {
+      const start = parseDateToUTC(options.targetDate);
+      const end = new Date(start);
+      end.setUTCDate(end.getUTCDate() + 1);
+      filter.createdAt = { $gte: start, $lt: end };
+      console.log(`[DEBUG] Filter by date range: ${start.toISOString()} - ${end.toISOString()}`);
+    }
+
+    const consultations = await MedicalConsultation.find(filter)
+      .populate({
+        path: 'doctorId',
+        select: 'fullName',
+        populate: {
+          path: 'doctorProfile',
+          select: 'specialty consultationFee',
+          populate: { path: 'specialty', select: 'name' }
+        }
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    console.log(`[DEBUG getUserPrescriptions] Found ${consultations.length} consultations`);
+    const formatted = consultations.map((consult) => {
+      const doctor = consult.doctorId || {};
+      const doctorProfile = doctor.doctorProfile || {};
+      const specialtyName = doctorProfile.specialty?.name || 'Chưa cập nhật';
+      const prescriptionText = (consult.prescription || []).map((drug) =>
+        `• **${drug.drugName}** – ${drug.dosage} – ${drug.instructions}${drug.duration ? ` (${drug.duration})` : ''}`
+      ).join('\n     ');
+      return {
+        id: consult._id,
+        date: consult.createdAt,
+        doctorName: doctor.fullName || 'Bác sĩ (không rõ)',
+        specialtyName,
+        diagnosis: consult.diagnosis || 'Chưa có chẩn đoán',
+        prescriptionItems: consult.prescription || [],
+        prescriptionText: prescriptionText || 'Không có thuốc',
+        instructions: consult.instructions || '',
+        followUpDate: consult.followUpDate || null
+      };
+    });
+    return formatted;
+  } catch (error) {
+    console.error(`[getUserPrescriptions] DB error: ${error.message}`);
+    return [];
+  }
 };

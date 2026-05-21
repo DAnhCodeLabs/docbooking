@@ -4,11 +4,13 @@ import ClinicDoctorsPage from "@/pages/clinic/ManageClinicDoctors/ClinicDoctorsP
 import AppointmentsPage from "@/pages/dashboard/ManageAppointments/AppointmentsPage";
 import ClinicDashboardPage from "@/pages/dashboard/ManageDashboard/ClinicDashboardPage";
 import DashboardPage from "@/pages/dashboard/ManageDashboard/DashboardPage";
+import DoctorDashboardPage from "@/pages/dashboard/ManageDashboard/DoctorDashboardPage";
 import LeavePage from "@/pages/doctor/ManageLeave/LeavePage";
 import MyPatientsPage from "@/pages/doctor/ManageMyPatients/MyPatientsPage";
 import ProfilePage from "@/pages/doctor/ManageProfile/ProfilePage";
 import BookingPage from "@/pages/patient/BookingPage/BookingPage";
 import CheckinPage from "@/pages/patient/CheckinPage";
+import ContactPage from "@/pages/patient/Contact";
 import DoctorsPage from "@/pages/patient/DoctorsPage";
 import PatientAppointmentsPage from "@/pages/patient/PatientAppointmentsPage";
 import PaymentResultPage from "@/pages/patient/payment/PaymentResultPage";
@@ -17,8 +19,6 @@ import { lazy } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import AuthGuard from "./AuthGuard";
 import PrivateRoute from "./PrivateRoute";
-import DoctorDashboardPage from "@/pages/dashboard/ManageDashboard/DoctorDashboardPage";
-import ContactPage from "@/pages/patient/Contact";
 
 // Layouts
 const DashboardLayout = lazy(() => import("@/layouts/DashboardLayout"));
@@ -28,6 +28,9 @@ const PatientLayout = lazy(() => import("@/layouts/PatientLayout"));
 const ManageUsers = lazy(() => import("@/pages/admin/ManageUsers/ManageUsers"));
 const ManagePendingDoctors = lazy(
   () => import("@/pages/admin/ManagePendingDoctors/ManagePendingDoctors"),
+);
+const AdminChatbot = lazy(
+  () => import("@/pages/admin/AdminChatbot/AdminChatbot"),
 );
 
 // Auth pages
@@ -195,6 +198,10 @@ export const router = createBrowserRouter([
           {
             path: "appointments",
             element: <AppointmentsPage />,
+          },
+          {
+            path: "chatbot",
+            element: <AdminChatbot />,
           },
         ],
       },

@@ -34,6 +34,7 @@ import scheduleRoutes from "./src/modules/schedule/schedule.routes.js";
 import specialtyRoutes from "./src/modules/specialty/specialty.routes.js";
 import ApiError from "./src/utils/ApiError.js"; // Thêm import ApiError
 import sendSuccess from "./src/utils/response.js";
+import adminChatRoutes from "./src/modules/Ai/AdminChatBot/adminChatRoutes.js";
 
 dotenv.config();
 
@@ -163,6 +164,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/clinic-admin", clinicDashboardRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/chatbot", chatRoutes);
+app.use("/api/admin/chat", adminChatRoutes);
 
 // ==================== XỬ LÝ 404 VÀ LỖI ====================
 

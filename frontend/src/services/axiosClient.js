@@ -20,7 +20,10 @@ axiosClient.interceptors.request.use(
 
     // [BẢN VÁ LỖI AI TIMEOUT]: Tắt đếm ngược thời gian chờ đối với luồng Chat AI
     // Nếu URL là API chatbot, cho phép trình duyệt chờ vô cực (0)
-    if (config.url && config.url.includes("/chatbot")) {
+    if (
+      (config.url && config.url.includes("/chatbot")) ||
+      config.url.includes("/admin/chat")
+    ) {
       config.timeout = 0;
     }
 

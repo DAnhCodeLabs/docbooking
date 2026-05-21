@@ -5,6 +5,7 @@ import {
   CheckCircleOutlined,
   DashboardOutlined,
   IdcardOutlined,
+  MessageOutlined,
   ScheduleOutlined,
   SettingOutlined,
   ShopOutlined,
@@ -44,6 +45,11 @@ export const adminMenu = [
     key: "/admin/appointments",
     icon: <ScheduleOutlined />,
     label: "Quản lý lịch hẹn",
+  },
+  {
+    key: "/admin/chatbot",
+    icon: <MessageOutlined />,
+    label: "Chatbot quản trị",
   },
   {
     key: "/admin/reports", // Sửa từ /dashboard/admin/reports

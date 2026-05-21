@@ -188,7 +188,7 @@ const MedicalChatbot = () => {
 
     try {
       const response = await httpPost(
-        "/chatbot",
+        "/chatbot", 
         { sessionId, message: text },
         false,
       );

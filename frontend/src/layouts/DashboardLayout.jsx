@@ -22,7 +22,7 @@ const DashboardLayout = () => {
   }, [location.pathname, isMobile]);
 
   return (
-    <Layout className="h-screen overflow-hidden bg-gray-200!">
+    <Layout className="h-screen w-screen overflow-hidden bg-gray-200!">
       {/* Sidebar cho desktop */}
       {isMobile ? (
         <Drawer
@@ -40,27 +40,49 @@ const DashboardLayout = () => {
       )}
 
       {/* Khu vực chính (Header + Content + Footer) */}
-      <Layout className="h-screen overflow-hidden">
-        <Header
-          collapsed={isMobile ? !mobileOpen : collapsed}
-          onToggle={() =>
-            isMobile ? setMobileOpen(!mobileOpen) : setCollapsed(!collapsed)
-          }
-          isMobile={isMobile}
-        />
+      <Layout className="h-screen flex flex-col overflow-hidden">
+        {/* Header - Cố định không bị bóp méo */}
+        <div className="shrink-0">
+          <Header
+            collapsed={isMobile ? !mobileOpen : collapsed}
+            onToggle={() =>
+              isMobile ? setMobileOpen(!mobileOpen) : setCollapsed(!collapsed)
+            }
+            isMobile={isMobile}
+          />
+        </div>
 
-        {/* Nội dung cuộn được */}
-        <Layout.Content className="p-4 md:p-8 pt-6 w-full mx-auto bg-white/70 overflow-auto">
-          <div className="animate-fade-in-up">
+        {/* Content - Khóa cuộn bên ngoài, nhường không gian cho Outlet */}
+        <Layout.Content className="flex-1 flex flex-col w-full mx-auto bg-white/70 overflow-hidden relative">
+          {/* Vùng chứa Outlet - Chỉ cho phép cuộn nội dung ở thẻ div này */}
+          <div className="animate-fade-in-up flex-1 flex flex-col w-full h-full p-4 md:p-8 pt-6 overflow-y-auto custom-scrollbar">
             <Outlet />
           </div>
         </Layout.Content>
 
-        <Layout.Footer className="bg-blue-500! text-center text-slate-500 text-sm py-4!">
+        {/* Footer - Cố định dưới cùng */}
+        <Layout.Footer className="bg-blue-500! text-center text-slate-500 text-sm py-4! shrink-0 z-10!">
           Hệ thống Quản trị DocGo © {new Date().getFullYear()}. Đã đăng ký bản
           quyền.
         </Layout.Footer>
       </Layout>
+
+      {/* CSS cho thanh cuộn (nếu cần đồng bộ với các trang) */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #cbd5e1;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background-color: #94a3b8;
+        }
+      `}</style>
     </Layout>
   );
 };

@@ -11,28 +11,26 @@ const normalizeVietnamese = (str) => {
   if (!str) return "";
   return str
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Loại bỏ dấu
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d")
-    .replace(/Đ/g, "D") // Xử lý chữ Đ đặc thù
+    .replace(/Đ/g, "D")
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "") // Bỏ ký tự đặc biệt
+    .replace(/[^a-z0-9\s]/g, "")
     .trim();
 };
 
 /**
- * Tìm kiếm chuyên khoa gần đúng (fuzzy) dựa trên tên
+ * Tìm kiếm chuyên khoa gần đúng (fuzzy) dựa trên tên – GIỮ NGUYÊN
  */
 export const findSpecialtyByName = async (queryName) => {
   if (!queryName || queryName.length < 2) return null;
 
-  // 1. Exact match (sử dụng Collation hoặc Regex)
   const exactMatch = await Specialty.findOne({
     name: { $regex: new RegExp(`^${queryName}$`, "i") },
     status: "active",
   }).lean();
   if (exactMatch) return exactMatch;
 
-  // 2. Fuzzy match
   const normalizedQuery = normalizeVietnamese(queryName);
   const queryWords = normalizedQuery.split(/\s+/).filter((w) => w.length >= 2);
   if (!queryWords.length) return null;
@@ -62,20 +60,18 @@ export const findSpecialtyByName = async (queryName) => {
 };
 
 /**
- * Lấy danh sách bác sĩ theo chuyên khoa
+ * Lấy danh sách bác sĩ theo chuyên khoa – GIỮ NGUYÊN
  */
 export const getDoctorsBySpecialty = async (specialtyId) => {
-  // Tối ưu: Giao việc Sort và Slice cho Database thay vì xử lý RAM ở server
   const doctors = await DoctorProfile.find({
     specialty: specialtyId,
     status: "active",
   })
-    .populate({ path: "user", select: "fullName" }) // Chỉ lấy fullName
+    .populate({ path: "user", select: "fullName" })
     .populate("clinicId", "clinicName address")
     .sort({ totalReviews: -1 })
     .lean();
 
-  // Lọc user valid và giới hạn số lượng an toàn
   return doctors
     .filter((doc) => doc.user?.fullName)
     .slice(0, 10)
@@ -91,7 +87,7 @@ export const getDoctorsBySpecialty = async (specialtyId) => {
 };
 
 /**
- * Đếm số lượng bác sĩ theo trạng thái hồ sơ
+ * Đếm số lượng bác sĩ theo trạng thái hồ sơ – GIỮ NGUYÊN
  */
 export const getDoctorCountByStatus = async (statuses) => {
   try {
@@ -106,14 +102,13 @@ export const getDoctorCountByStatus = async (statuses) => {
 };
 
 /**
- * Tìm kiếm clinic (bệnh viện/phòng khám) gần đúng dựa trên tên
- * Chỉ lấy các clinic đang hợp tác (status = 'resolved' hoặc 'contacted')
+ * Tìm kiếm clinic gần đúng (chỉ lấy clinic đang hợp tác: resolved/contacted) – GIỮ NGUYÊN
+ * Dùng cho list_doctors_by_clinic
  */
 export const findClinicByName = async (queryName) => {
   console.log("[DEBUG][findClinicByName] queryName:", queryName);
   if (!queryName || queryName.length < 2) return null;
 
-  // Exact match
   const exactMatch = await ClinicLead.findOne({
     clinicName: { $regex: new RegExp(`^${queryName}$`, "i") },
     status: { $in: ["resolved", "contacted"] },
@@ -126,7 +121,6 @@ export const findClinicByName = async (queryName) => {
     return exactMatch;
   }
 
-  // Fuzzy
   const normalizedQuery = normalizeVietnamese(queryName);
   const queryWords = normalizedQuery.split(/\s+/).filter((w) => w.length >= 2);
   if (!queryWords.length) return null;
@@ -136,10 +130,6 @@ export const findClinicByName = async (queryName) => {
   })
     .select("clinicName address")
     .lean();
-  console.log(
-    "[DEBUG][findClinicByName] total clinics in DB:",
-    allClinics.length,
-  );
 
   let bestMatch = null;
   let maxRatio = 0;
@@ -166,6 +156,9 @@ export const findClinicByName = async (queryName) => {
   return bestMatch;
 };
 
+/**
+ * Lấy danh sách bác sĩ theo clinic – GIỮ NGUYÊN
+ */
 export const getDoctorsByClinic = async (
   clinicId,
   approvalStatus = "approved",
@@ -191,6 +184,7 @@ export const getDoctorsByClinic = async (
     .sort({ totalReviews: -1 })
     .limit(20)
     .lean();
+
   console.log(
     "[DEBUG][getDoctorsByClinic] found doctors count:",
     doctors.length,
@@ -208,3 +202,74 @@ export const getDoctorsByClinic = async (
     }));
 };
 
+// ==================== [NEW] HÀM MỚI ====================
+
+/**
+ * Lấy danh sách clinic theo mảng trạng thái (chỉ lấy _id và clinicName)
+ * Dùng cho intent list_clinics_by_approval_status
+ */
+export const getClinicsByStatus = async (statuses) => {
+  try {
+    const clinics = await ClinicLead.find(
+      { status: { $in: statuses } },
+      { clinicName: 1, _id: 1 },
+    ).lean();
+    return clinics;
+  } catch (error) {
+    console.error(
+      `[adminDataService] Lỗi lấy clinic theo status (${statuses}):`,
+      error.message,
+    );
+    throw new Error("DB_QUERY_FAILED");
+  }
+};
+
+/**
+ * Lấy chi tiết một clinic (kể cả chưa duyệt) dựa trên tên (exact + fuzzy)
+ * Dùng cho intent get_clinic_details
+ * Không giới hạn status, admin muốn xem mọi clinic
+ */
+export const getClinicDetails = async (queryName) => {
+  if (!queryName || queryName.length < 2) return null;
+
+  // 1. Exact match (không phân biệt hoa thường, không lọc status)
+  let clinic = await ClinicLead.findOne({
+    clinicName: { $regex: new RegExp(`^${queryName}$`, "i") },
+  })
+    .populate("specialties", "name")
+    .lean();
+  if (clinic) return clinic;
+
+  // 2. Fuzzy match (normalize, tìm trong tất cả clinic)
+  const normalizedQuery = normalizeVietnamese(queryName);
+  const queryWords = normalizedQuery.split(/\s+/).filter((w) => w.length >= 2);
+  if (!queryWords.length) return null;
+
+  const allClinics = await ClinicLead.find({})
+    .select("clinicName") // chỉ lấy tên để so khớp, giảm tải
+    .lean();
+
+  let bestMatch = null;
+  let maxRatio = 0;
+  for (const c of allClinics) {
+    const normName = normalizeVietnamese(c.clinicName);
+    const matched = queryWords.reduce(
+      (count, w) => count + (normName.includes(w) ? 1 : 0),
+      0,
+    );
+    const ratio = matched / queryWords.length;
+    if (ratio >= 0.6 && ratio > maxRatio) {
+      maxRatio = ratio;
+      bestMatch = c;
+    }
+  }
+
+  if (bestMatch) {
+    clinic = await ClinicLead.findById(bestMatch._id)
+      .populate("specialties", "name")
+      .lean();
+    return clinic;
+  }
+
+  return null;
+};

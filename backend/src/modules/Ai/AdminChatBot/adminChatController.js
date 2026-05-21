@@ -9,7 +9,7 @@ import { parseAdminQuery } from "./adminIntentParser.js";
 import { fetchAdminContext } from "./adminContextHandler.js";
 import { buildAdminPrompt } from "./adminPromptBuilder.js";
 
-// ========== CODE MỚI: helper đọc metadata linh hoạt hơn ==========
+// Helper đọc metadata linh hoạt (giữ nguyên)
 const getLastStatusFilterFromSession = (session) => {
   if (!session.messages || session.messages.length === 0) return null;
   // Duyệt ngược từ cuối lên, lấy message đầu tiên của assistant có metadata
@@ -21,7 +21,6 @@ const getLastStatusFilterFromSession = (session) => {
       typeof msg.metadata === "string"
     ) {
       const meta = msg.metadata;
-      // Tìm bất kỳ từ khóa "approved" hoặc "pending" (không phân biệt hoa thường)
       if (/approved/i.test(meta)) return "approved";
       if (/pending/i.test(meta)) return "pending";
     }
@@ -29,7 +28,6 @@ const getLastStatusFilterFromSession = (session) => {
   return null;
 };
 
-// ========== CODE CŨ giữ nguyên toàn bộ controller ==========
 export const processAdminChat = asyncHandler(async (req, res) => {
   const { sessionId, message } = req.body;
   const adminId = req.user?._id;

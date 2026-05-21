@@ -16,12 +16,30 @@ const EXPLICIT_PENDING_REGEX =
   /(chưa duyệt|chờ duyệt|pending|chưa được duyệt)/i;
 const EXPLICIT_APPROVED_REGEX = /(đã duyệt|được duyệt|approved|active)/i;
 
-// ==================== SỬA CLINIC_REGEX: THÊM SỐ (0-9) ====================
-// Cho phép chữ cái (có dấu), số, và khoảng trắng
+// Regex cũ cho clinic có tên cụ thể (dùng cho list_doctors_by_clinic)
 const CLINIC_REGEX =
   /(?:bác sĩ|bs|danh sách).*?(?:bệnh viện|bv|phòng khám|cơ sở)\s+([a-zà-ỹ0-9\s]+)$/i;
 
-// ==================== HÀM PARSE GIỮ NGUYÊN (ƯU TIÊN CLINIC TRƯỚC) ====================
+// ==================== [NEW] REGEX MỚI ====================
+// Regex cho chi tiết bệnh viện (ưu tiên cao nhất)
+const CLINIC_DETAIL_REGEX =
+  /(?:chi tiết|thông tin|địa chỉ|số điện thoại).*(?:bệnh viện|bv|phòng khám|cơ sở)\s+([a-zà-ỹ0-9\s]+)$/i;
+
+// Regex cho danh sách bệnh viện theo trạng thái
+const CLINIC_LIST_REGEX =
+  /(?:danh sách|liệt kê|xem|list).*(?:bệnh viện|phòng khám|cơ sở y tế).*(chưa duyệt|đã duyệt|chờ duyệt|pending|rejected|bị từ chối)/i;
+
+// Map từ khóa trạng thái -> mảng status trong DB
+const statusKeywordMap = {
+  "chưa duyệt": ["pending"],
+  "chờ duyệt": ["pending"],
+  pending: ["pending"],
+  "đã duyệt": ["resolved", "contacted"],
+  rejected: ["rejected"],
+  "bị từ chối": ["rejected"],
+};
+
+// ==================== HÀM PARSE CHÍNH ====================
 export const parseAdminQuery = (message, prevState = null) => {
   console.log("[DEBUG][parseAdminQuery] Input:", message);
   if (!message || typeof message !== "string") {
@@ -31,12 +49,66 @@ export const parseAdminQuery = (message, prevState = null) => {
   const lowerMsg = message.toLowerCase().trim();
   console.log("[DEBUG][parseAdminQuery] lowerMsg:", lowerMsg);
 
-  // 1. Ưu tiên bệnh viện (clinic) trước
+  // [NEW] 1. Ưu tiên cao nhất: kiểm tra intent chi tiết bệnh viện
+  const clinicDetailMatch = lowerMsg.match(CLINIC_DETAIL_REGEX);
+  if (clinicDetailMatch && clinicDetailMatch[1]) {
+    let clinicName = clinicDetailMatch[1].trim();
+    const stopWords = [
+      "ở",
+      "tại",
+      "quận",
+      "huyện",
+      "tp",
+      "thành phố",
+      "phường",
+      "xã",
+      ",",
+      ".",
+    ];
+    for (const sw of stopWords) {
+      if (clinicName.endsWith(sw)) {
+        clinicName = clinicName.slice(0, -sw.length).trim();
+      }
+    }
+    if (clinicName.length >= 2) {
+      console.log(
+        "[DEBUG][parseAdminQuery] Intent: get_clinic_details, clinicName:",
+        clinicName,
+      );
+      return {
+        intent: "get_clinic_details",
+        clinicName: clinicName,
+        requiresClarification: false,
+        explicitStatus: null,
+      };
+    }
+  }
+
+  // [NEW] 2. Kiểm tra danh sách bệnh viện theo trạng thái
+  const clinicListMatch = lowerMsg.match(CLINIC_LIST_REGEX);
+  if (clinicListMatch) {
+    const statusKeyword = clinicListMatch[1].toLowerCase();
+    const statuses = statusKeywordMap[statusKeyword];
+    if (statuses) {
+      console.log(
+        "[DEBUG][parseAdminQuery] Intent: list_clinics_by_approval_status, statuses:",
+        statuses,
+      );
+      return {
+        intent: "list_clinics_by_approval_status",
+        statuses: statuses,
+        statusLabel: statusKeyword,
+        requiresClarification: false,
+        explicitStatus: null,
+      };
+    }
+  }
+
+  // 3. Kiểm tra clinic có tên cụ thể (list_doctors_by_clinic) – GIỮ NGUYÊN LOGIC CŨ
   const clinicMatch = lowerMsg.match(CLINIC_REGEX);
   console.log("[DEBUG][parseAdminQuery] clinicMatch:", clinicMatch);
   if (clinicMatch?.[1]) {
     let clinicName = clinicMatch[1].trim();
-    // Loại bỏ stop words ở cuối (nếu có)
     const stopWords = [
       "ở",
       "tại",
@@ -74,7 +146,7 @@ export const parseAdminQuery = (message, prevState = null) => {
     }
   }
 
-  // 2. Kiểm tra chuyên khoa
+  // 4. Kiểm tra chuyên khoa – GIỮ NGUYÊN
   const specialtyMatch = lowerMsg.match(SPECIALTY_REGEX);
   if (specialtyMatch?.[1]) {
     const cleanSpecialty = specialtyMatch[1]
@@ -94,7 +166,7 @@ export const parseAdminQuery = (message, prevState = null) => {
     }
   }
 
-  // 3. Thống kê số lượng (giữ nguyên)
+  // 5. Thống kê số lượng bác sĩ – GIỮ NGUYÊN
   const isPending = PENDING_REGEX.test(lowerMsg);
   const isApproved = !isPending && APPROVED_REGEX.test(lowerMsg);
   if (isPending || isApproved) {
@@ -124,7 +196,7 @@ export const parseAdminQuery = (message, prevState = null) => {
     };
   }
 
-  // 4. Mơ hồ về bác sĩ
+  // 6. Mơ hồ về bác sĩ – GIỮ NGUYÊN
   if (/(bác sĩ|bs)/i.test(lowerMsg)) {
     console.log("[DEBUG][parseAdminQuery] Intent: ambiguous_doctor_status");
     return {

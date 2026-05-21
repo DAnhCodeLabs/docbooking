@@ -33,9 +33,8 @@ const formatDoctor = (doc, idx) => {
   return `${idx + 1}. **Bác sĩ ${doc.fullName}**\n   - 🩺 Kinh nghiệm: ${exp}\n   - 💰 Phí khám: ${fee}\n   - ${clinic}${address}\n   - ${rating}`;
 };
 
-// ---------- CÁC BUILDER CHO TỪNG INTENT ----------
+// ---------- CÁC BUILDER CHO TỪNG INTENT (giữ nguyên cũ) ----------
 const intentBuilders = {
-  // Giữ nguyên builder list_doctors_by_specialty (chỉ sửa task)
   list_doctors_by_specialty: (ctx) => {
     if (ctx.error === "SPECIALTY_NOT_FOUND") {
       const suggestions =
@@ -55,14 +54,12 @@ const intentBuilders = {
     }
     return {
       data: `📋 DANH SÁCH BÁC SĨ CHUYÊN KHOA: **${ctx.specialty.name}**\nTổng: **${ctx.doctors.length}**\n\n${ctx.doctors.map(formatDoctor).join("\n\n")}`,
-      // ========== CODE MỚI: thêm yêu cầu state_summary = "approved_specialty_{name}_{count}" ==========
       task: `Trình bày danh sách markdown. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bác sĩ nào không ạ?"
-      \nYÊU CẦU JSON: "state_summary" phải có dạng "approved_specialty_${ctx.specialty.name}_${ctx.doctors.length}" (chỉ dùng "approved" vì đây là danh sách bác sĩ đã duyệt).`,
+      \nYÊU CẦU JSON: "state_summary" phải có dạng "approved_specialty_${ctx.specialty.name}_${ctx.doctors.length}".`,
       state: `admin_list_doctors_${ctx.specialty.name}_${ctx.doctors.length}`,
     };
   },
 
-  // Giữ nguyên builder count
   count_doctors_by_approval_status: (ctx) => {
     if (ctx.error === "DB_QUERY_FAILED") {
       return {
@@ -74,7 +71,6 @@ const intentBuilders = {
     if (typeof ctx.count === "number") {
       const type = ctx.statusLabel === "đã duyệt" ? "Đã duyệt" : "Chưa duyệt";
       const statusKey = ctx.statusLabel === "đã duyệt" ? "approved" : "pending";
-      // ========== CODE MỚI: thêm yêu cầu state_summary = "approved_count_{count}" hoặc "pending_count_{count}" ==========
       return {
         data: `📊 THỐNG KÊ:\n- Trạng thái: ${type.toUpperCase()}\n- Số lượng: **${ctx.count}**`,
         task: `Trình bày kết quả rõ ràng.\n• Trạng thái: **${type}**\n• Số lượng: **${ctx.count}**\nBắt buộc thêm: "💡 Anh/chị có muốn tìm bác sĩ theo chuyên khoa/bệnh viện không ạ?"
@@ -89,7 +85,6 @@ const intentBuilders = {
     };
   },
 
-  // Builder clinic – cũng cần sửa task tương tự
   list_doctors_by_clinic: (ctx) => {
     if (ctx.error === "CLINIC_NOT_FOUND") {
       const suggestions =
@@ -113,7 +108,6 @@ const intentBuilders = {
     const statusText =
       ctx.statusFilter === "pending" ? "CHƯA DUYỆT" : "ĐÃ DUYỆT";
     const statusKey = ctx.statusFilter === "pending" ? "pending" : "approved";
-    // ========== CODE MỚI: thêm yêu cầu state_summary = "approved_clinic_{name}_{count}" hoặc "pending_clinic_{name}_{count}" ==========
     return {
       data: `📋 DANH SÁCH BÁC SĨ **${statusText}** – BỆNH VIỆN: **${ctx.clinic.name}**\nTổng: **${ctx.doctors.length}**\n\n${ctx.doctors.map(formatDoctor).join("\n\n")}`,
       task: `Trình bày danh sách markdown. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bác sĩ nào hoặc lọc theo chuyên khoa không ạ?"
@@ -121,9 +115,130 @@ const intentBuilders = {
       state: `admin_list_doctors_${statusKey}_${ctx.clinic.name}_${ctx.doctors.length}`,
     };
   },
+
+  // ==================== [NEW] BUILDER CHO DANH SÁCH BỆNH VIỆN THEO TRẠNG THÁI ====================
+  list_clinics_by_approval_status: (ctx) => {
+    if (ctx.error === "MISSING_STATUS") {
+      return {
+        data: `⚠️ THIẾU THÔNG TIN TRẠNG THÁI.`,
+        task: `Thông báo lỗi, yêu cầu admin nói rõ "chưa duyệt", "đã duyệt" hoặc "bị từ chối".`,
+        state: `admin_missing_status`,
+      };
+    }
+    if (ctx.error === "DB_QUERY_FAILED") {
+      return {
+        data: `❌ LỖI HỆ THỐNG DB.`,
+        task: `Thông báo lỗi tạm thời.`,
+        state: `admin_db_error`,
+      };
+    }
+    const count = ctx.count || 0;
+    const label =
+      ctx.statusLabel === "chưa duyệt"
+        ? "CHƯA DUYỆT"
+        : ctx.statusLabel === "đã duyệt"
+          ? "ĐÃ DUYỆT"
+          : ctx.statusLabel === "bị từ chối"
+            ? "BỊ TỪ CHỐI"
+            : (ctx.statusLabel || "KHÔNG XÁC ĐỊNH").toUpperCase();
+
+    if (count === 0) {
+      return {
+        data: `🏥 DANH SÁCH BỆNH VIỆN ${label}: **0**`,
+        task: `Thông báo chưa có cơ sở nào. Gợi ý: "Anh/chị có muốn xem danh sách ${ctx.statusLabel === "chưa duyệt" ? "đã duyệt" : "chưa duyệt"} không?"`,
+        state: `no_clinics_${ctx.statusLabel}_0`,
+      };
+    }
+
+    const clinicList = ctx.clinics.map((c) => `- ${c.name}`).join("\n");
+    const statusKey =
+      ctx.statusLabel === "chưa duyệt"
+        ? "pending"
+        : ctx.statusLabel === "đã duyệt"
+          ? "approved"
+          : ctx.statusLabel;
+    return {
+      data: `📋 DANH SÁCH BỆNH VIỆN ${label} (Tổng: **${count}**)\n\n${clinicList}`,
+      task: `Trình bày danh sách markdown với bullet points, CHỈ HIỂN THỊ TÊN, không thêm địa chỉ hay thông tin khác. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bệnh viện nào không ạ?"
+      \nYÊU CẦU JSON: "state_summary" phải có dạng "${statusKey}_clinics_${count}".`,
+      state: `list_clinics_${ctx.statusLabel}_${count}`,
+    };
+  },
+
+  // ==================== [NEW] BUILDER CHO CHI TIẾT MỘT BỆNH VIỆN ====================
+  get_clinic_details: (ctx) => {
+    if (ctx.error === "MISSING_CLINIC_NAME") {
+      return {
+        data: `⚠️ THIẾU TÊN BỆNH VIỆN.`,
+        task: `Thông báo lỗi, yêu cầu admin cung cấp tên bệnh viện cụ thể.`,
+        state: `admin_missing_clinic_name`,
+      };
+    }
+    if (ctx.error === "DB_QUERY_FAILED") {
+      return {
+        data: `❌ LỖI HỆ THỐNG DB.`,
+        task: `Thông báo lỗi tạm thời.`,
+        state: `admin_db_error`,
+      };
+    }
+    if (ctx.error === "CLINIC_NOT_FOUND") {
+      const suggestions =
+        ctx.suggestions?.map((s) => `- ${s}`).join("\n") || "- Không có gợi ý";
+      return {
+        data: `⚠️ KHÔNG TÌM THẤY BỆNH VIỆN/PHÒNG KHÁM: "${ctx.queryClinic}"\nGỢI Ý KHÁC:\n${suggestions}`,
+        task: `Thông báo không tìm thấy, liệt kê gợi ý. Hỏi: "Anh/chị có muốn xem danh sách bệnh viện đã duyệt hoặc chưa duyệt không ạ?"`,
+        state: `admin_clinic_not_found_${ctx.queryClinic}`,
+      };
+    }
+
+    const clinic = ctx.clinic;
+    if (!clinic) {
+      return {
+        data: `⚠️ KHÔNG CÓ DỮ LIỆU.`,
+        task: `Thông báo lỗi không xác định.`,
+        state: `admin_no_clinic_data`,
+      };
+    }
+
+    // Format chi tiết clinic
+    const specialties =
+      clinic.specialties?.map((s) => s.name).join(", ") || "Chưa cập nhật";
+    const fee = clinic.consultationFee
+      ? `${clinic.consultationFee.toLocaleString("vi-VN")} VNĐ`
+      : "Chưa cập nhật";
+    const statusText =
+      {
+        pending: "Chờ duyệt",
+        contacted: "Đã liên hệ",
+        resolved: "Đã duyệt",
+        rejected: "Từ chối",
+        locked: "Đã khóa",
+        deleted: "Đã xóa",
+      }[clinic.status] || clinic.status;
+
+    return {
+      data:
+        `🏥 **THÔNG TIN CHI TIẾT BỆNH VIỆN**\n\n` +
+        `📛 **Tên:** ${clinic.clinicName}\n` +
+        `📍 **Địa chỉ:** ${clinic.address || "Chưa cập nhật"}\n` +
+        `📞 **Điện thoại:** ${clinic.phone || "Chưa cập nhật"}\n` +
+        `📧 **Email:** ${clinic.email || "Chưa cập nhật"}\n` +
+        `👤 **Người đại diện:** ${clinic.representativeName || "Chưa cập nhật"}\n` +
+        `🏢 **Loại hình:** ${clinic.clinicType || "Chưa cập nhật"}\n` +
+        `💰 **Phí khám:** ${fee}\n` +
+        `✅ **Trạng thái:** ${statusText}\n` +
+        `🩺 **Chuyên khoa:** ${specialties}\n` +
+        (clinic.notes ? `📝 **Ghi chú:** ${clinic.notes}\n` : "") +
+        (clinic.image ? `🖼️ **Hình ảnh:** ${clinic.image}\n` : ""),
+      task:
+        `Trình bày chi tiết rõ ràng, dễ đọc. Sau đó hỏi: "Anh/chị có muốn xem danh sách bác sĩ của bệnh viện này không ạ?"\n` +
+        `YÊU CẦU JSON: "state_summary" có dạng "clinic_details_${clinic.clinicName.replace(/\s/g, "_")}"`,
+      state: `clinic_details_${clinic.clinicName.replace(/\s/g, "_")}`,
+    };
+  },
 };
 
-// Hàm buildAdminPrompt giữ nguyên
+// Hàm buildAdminPrompt giữ nguyên (không thay đổi)
 export const buildAdminPrompt = (context) => {
   let { data = "", task = "", state = "admin_general" } = {};
 

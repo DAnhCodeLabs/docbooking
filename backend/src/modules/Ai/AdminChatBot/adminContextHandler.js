@@ -6,9 +6,11 @@ import {
   getDoctorsBySpecialty,
   findClinicByName,
   getDoctorsByClinic,
+  getClinicsByStatus, // [NEW] cho list_clinics_by_approval_status
+  getClinicDetails, // [NEW] cho get_clinic_details
 } from "./adminDataService.js";
 import Specialty from "../../../models/Specialty.js";
-import ClinicLead from "../../../models/ClinicLead.js"; // THÊM IMPORT
+import ClinicLead from "../../../models/ClinicLead.js";
 
 export const fetchAdminContext = async (parsed, inheritedStatus = null) => {
   console.log("[DEBUG][fetchAdminContext] parsed:", JSON.stringify(parsed));
@@ -22,6 +24,8 @@ export const fetchAdminContext = async (parsed, inheritedStatus = null) => {
     specialtyName,
     clinicName,
     explicitStatus,
+    statuses, // [NEW] cho list_clinics_by_approval_status
+    statusLabel, // [NEW] cho list_clinics_by_approval_status
   } = parsed;
 
   if (requiresClarification) {
@@ -40,7 +44,6 @@ export const fetchAdminContext = async (parsed, inheritedStatus = null) => {
   switch (intent) {
     case "list_doctors_by_specialty":
       console.log("[DEBUG][fetchAdminContext] Handling specialty");
-      // ... (giữ nguyên code cũ)
       if (!specialtyName)
         return { intent, error: "MISSING_SPECIALTY_NAME", data: null };
       const specialty = await findSpecialtyByName(specialtyName);
@@ -133,22 +136,107 @@ export const fetchAdminContext = async (parsed, inheritedStatus = null) => {
         statusType,
       );
       const isPending = statusType === "pending";
-      const statuses = isPending
+      const statusesArr = isPending
         ? ["pending", "pending_admin_approval"]
         : ["active"];
-      const statusLabel = isPending ? "chưa duyệt" : "đã duyệt";
+      const statusLabelText = isPending ? "chưa duyệt" : "đã duyệt";
       try {
-        const count = await getDoctorCountByStatus(statuses);
+        const count = await getDoctorCountByStatus(statusesArr);
         return {
           intent,
           statusType,
-          statusLabel,
+          statusLabel: statusLabelText,
           count,
-          data: { count, statusLabel },
+          data: { count, statusLabel: statusLabelText },
         };
       } catch {
         return { intent, error: "DB_QUERY_FAILED", data: null };
       }
+
+    // [NEW] case: danh sách bệnh viện theo trạng thái (đã duyệt/chưa duyệt)
+    case "list_clinics_by_approval_status": {
+      console.log(
+        "[DEBUG][fetchAdminContext] Handling list_clinics_by_approval_status, statuses:",
+        statuses,
+      );
+      if (!statuses || statuses.length === 0) {
+        return {
+          intent,
+          error: "MISSING_STATUS",
+          data: null,
+        };
+      }
+      try {
+        const clinics = await getClinicsByStatus(statuses);
+        const count = clinics.length;
+        return {
+          intent,
+          clinics: clinics.map((c) => ({ id: c._id, name: c.clinicName })),
+          count,
+          statusFilter: statuses,
+          statusLabel: statusLabel, // "chưa duyệt", "đã duyệt", "bị từ chối"
+          data: { clinics, count, statusLabel },
+        };
+      } catch (error) {
+        console.error(
+          "[fetchAdminContext] list_clinics_by_approval_status error:",
+          error.message,
+        );
+        return {
+          intent,
+          error: "DB_QUERY_FAILED",
+          data: null,
+        };
+      }
+    }
+
+    // [NEW] case: chi tiết một bệnh viện
+    case "get_clinic_details": {
+      console.log(
+        "[DEBUG][fetchAdminContext] Handling get_clinic_details, clinicName:",
+        parsed.clinicName,
+      );
+      const queryClinicName = parsed.clinicName;
+      if (!queryClinicName || queryClinicName.length < 2) {
+        return {
+          intent,
+          error: "MISSING_CLINIC_NAME",
+          data: null,
+        };
+      }
+      try {
+        const clinic = await getClinicDetails(queryClinicName);
+        if (!clinic) {
+          // Lấy danh sách gợi ý (tất cả clinic, giới hạn 5)
+          const suggestions = await ClinicLead.find({})
+            .limit(5)
+            .select("clinicName")
+            .lean();
+          return {
+            intent,
+            error: "CLINIC_NOT_FOUND",
+            queryClinic: queryClinicName,
+            suggestions: suggestions.map((c) => c.clinicName),
+            data: null,
+          };
+        }
+        return {
+          intent,
+          clinic: clinic,
+          data: { clinic },
+        };
+      } catch (error) {
+        console.error(
+          "[fetchAdminContext] get_clinic_details error:",
+          error.message,
+        );
+        return {
+          intent,
+          error: "DB_QUERY_FAILED",
+          data: null,
+        };
+      }
+    }
 
     default:
       console.log("[DEBUG][fetchAdminContext] Unknown intent");

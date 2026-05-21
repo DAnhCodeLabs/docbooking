@@ -19,6 +19,7 @@ import errorHandler from "./src/middlewares/errorHandler.js";
 import notFound from "./src/middlewares/notFound.js";
 import adminDoctorRoutes from "./src/modules/admin/admin.doctor.routes.js";
 import adminAuthRoutes from "./src/modules/admin/admin.routes.js";
+import adminChatRoutes from "./src/modules/Ai/AdminChatBot/adminChatRoutes.js";
 import chatRoutes from "./src/modules/Ai/ChatBot/chatRoutes.js";
 import { removeSlotIndex } from "./src/modules/appointment/appointment.init.js";
 import appointmentRoutes from "./src/modules/appointment/appointment.routes.js";
@@ -34,7 +35,6 @@ import scheduleRoutes from "./src/modules/schedule/schedule.routes.js";
 import specialtyRoutes from "./src/modules/specialty/specialty.routes.js";
 import ApiError from "./src/utils/ApiError.js"; // Thêm import ApiError
 import sendSuccess from "./src/utils/response.js";
-import adminChatRoutes from "./src/modules/Ai/AdminChatBot/adminChatRoutes.js";
 
 dotenv.config();
 

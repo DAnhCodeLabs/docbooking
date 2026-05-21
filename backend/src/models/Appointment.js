@@ -103,6 +103,7 @@ const appointmentSchema = new mongoose.Schema(
 );
 
 // Index để tìm kiếm nhanh
+appointmentSchema.index({ createdAt: -1 });
 appointmentSchema.index({ bookingUser: 1 });
 appointmentSchema.index({ doctor: 1 });
 appointmentSchema.index({ status: 1 });

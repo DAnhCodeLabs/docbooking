@@ -19,23 +19,35 @@ import {
   message,
 } from "antd";
 import { useEffect, useRef, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  Line,
+  LineChart,
+  CartesianGrid,
+  Tooltip as ReTooltip,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const { Text } = Typography;
 
-// ========== HÀM FORMAT MARKDOWN GIỐNG USER CHATBOT ==========
+// ========== HÀM FORMAT MARKDOWN (GIỮ NGUYÊN) ==========
 const formatMarkdownToHtml = (text) => {
   if (!text) return "";
   let html = text
-    .replace(/\n/g, "<br/>") // xuống dòng
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // in đậm
-    .replace(/\*(.*?)\*/g, "<em>$1</em>"); // in nghiêng
-
-  // Xử lý danh sách: dòng bắt đầu bằng số + chấm hoặc dấu gạch ngang
+    .replace(/\n/g, "<br/>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>");
   const lines = html.split("<br/>");
   let inList = false;
   let listType = null;
   const processedLines = [];
-
   for (let line of lines) {
     const orderedMatch = line.match(/^(\d+)\.\s+(.*)$/);
     const unorderedMatch = line.match(/^-\s+(.*)$/);
@@ -71,9 +83,8 @@ const formatMarkdownToHtml = (text) => {
   if (inList) processedLines.push(`</${listType}>`);
   return processedLines.join("<br/>");
 };
-// ===========================================================
+// ====================================================
 
-// Dữ liệu tin nhắn khởi tạo
 const initialMessages = [
   {
     id: 1,
@@ -81,15 +92,15 @@ const initialMessages = [
     message:
       "Xin chào Quản trị viên! Tôi là trợ lý AI của DocGo Portal. Tôi có thể giúp bạn trích xuất báo cáo, tra cứu thông tin phòng khám, hoặc kiểm tra trạng thái phê duyệt bác sĩ. Bạn cần hỗ trợ gì hôm nay?",
     timestamp: new Date(),
+    chartData: null,
   },
 ];
 
-// Danh sách câu hỏi gợi ý nhanh
 const quickPrompts = [
-  "Thống kê doanh thu hôm nay",
-  "Danh sách bác sĩ đang chờ duyệt",
-  "Phòng khám nào có lịch hẹn nhiều nhất?",
-  "Tóm tắt đánh giá của bệnh nhân",
+  "Thống kê doanh thu toàn hệ thống",
+  "Doanh thu tuần này",
+  "Doanh thu tháng trước",
+  "Danh sách bác sĩ chưa duyệt",
 ];
 
 const generateSessionId = () => {
@@ -97,6 +108,154 @@ const generateSessionId = () => {
   const random = Math.random().toString(36).substring(2, 10);
   return `admin_${timestamp}_${random}`;
 };
+
+// ========== COMPONENT BIỂU ĐỒ (HỖ TRỢ BAR, PIE, LINE) ==========
+const ChartRenderer = ({ chartData }) => {
+  if (!chartData) return null;
+  const { bar, pie, line } = chartData;
+  const hasBar = bar && bar.data && bar.data.length > 0;
+  const hasPie = pie && pie.data && pie.data.length > 0;
+  const hasLine = line && line.series && line.series.length > 0;
+  if (!hasBar && !hasPie && !hasLine) return null;
+
+  return (
+    <div className="mt-4 w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {hasBar && (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg">
+            <h3 className="text-xl font-bold text-slate-800 mb-4 text-center">
+              {bar.title}
+            </h3>
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart
+                data={bar.data}
+                margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+              >
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 14, fontWeight: 500 }}
+                />
+                <YAxis tick={{ fontSize: 12 }} />
+                <ReTooltip
+                  formatter={(value) => {
+                    if (bar.valueLabel?.includes("VNĐ")) {
+                      return value.toLocaleString("vi-VN") + " VNĐ";
+                    }
+                    return value.toLocaleString("vi-VN");
+                  }}
+                  labelFormatter={(label) => `${label}`}
+                  contentStyle={{ fontSize: 14, borderRadius: 8 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 14, paddingTop: 16 }} />
+                <Bar
+                  dataKey="value"
+                  name={bar.valueLabel || "Giá trị"}
+                  radius={[8, 8, 0, 0]}
+                >
+                  {bar.data.map((entry, idx) => (
+                    <Cell
+                      key={`cell-${idx}`}
+                      fill={entry.color || bar.colors?.[idx] || "#3b82f6"}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        {hasPie && (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg">
+            <h3 className="text-xl font-bold text-slate-800 mb-4 text-center">
+              {pie.title}
+            </h3>
+            <ResponsiveContainer width="100%" height={400}>
+              <PieChart>
+                <Pie
+                  data={pie.data}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={80}
+                  outerRadius={140}
+                  paddingAngle={3}
+                  dataKey="value"
+                  label={({ name, percent }) =>
+                    `${name}: ${(percent * 100).toFixed(0)}%`
+                  }
+                  labelLine={{ strokeWidth: 2 }}
+                >
+                  {pie.data.map((entry, idx) => (
+                    <Cell
+                      key={`cell-${idx}`}
+                      fill={entry.color || pie.colors?.[idx] || "#3b82f6"}
+                    />
+                  ))}
+                </Pie>
+                <ReTooltip
+                  formatter={(value) => value.toLocaleString("vi-VN") + " VNĐ"}
+                />
+                <Legend wrapperStyle={{ fontSize: 14 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        {hasLine && (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg">
+            <h3 className="text-xl font-bold text-slate-800 mb-4 text-center">
+              {line.title}
+            </h3>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart
+                data={line.series[0].data.map((value, idx) => ({
+                  name: line.xAxis.categories[idx],
+                  value: value,
+                }))}
+                margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 12 }}
+                  interval={Math.floor(line.xAxis.categories.length / 10)}
+                />
+                <YAxis
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={(value) => {
+                    if (line.yAxis?.label?.includes("VNĐ")) {
+                      return value.toLocaleString("vi-VN");
+                    }
+                    return value;
+                  }}
+                />
+                <ReTooltip
+                  formatter={(value) => {
+                    if (line.yAxis?.label?.includes("VNĐ")) {
+                      return value.toLocaleString("vi-VN") + " VNĐ";
+                    }
+                    return value.toLocaleString("vi-VN");
+                  }}
+                  labelFormatter={(label) => `${label}`}
+                  contentStyle={{ fontSize: 14, borderRadius: 8 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 14, paddingTop: 16 }} />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  name={line.series[0].name}
+                  stroke={line.series[0].color || "#3b82f6"}
+                  strokeWidth={3}
+                  dot={{ r: 4, strokeWidth: 2 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+// ====================================================
+
 const AdminChatbot = () => {
   const [messages, setMessages] = useState(initialMessages);
   const [inputValue, setInputValue] = useState("");
@@ -108,7 +267,6 @@ const AdminChatbot = () => {
   useEffect(() => {
     const newSessionId = generateSessionId();
     setSessionId(newSessionId);
-    // Không lưu vào localStorage
   }, []);
 
   const scrollToBottom = () => {
@@ -125,7 +283,12 @@ const AdminChatbot = () => {
       sessionId,
       message: messageText,
     });
-    if (response?.success && response?.data?.reply) return response.data.reply;
+    if (response?.success && response?.data) {
+      return {
+        reply: response.data.reply,
+        chartData: response.data.chartData || null,
+      };
+    }
     throw new Error("Phản hồi không hợp lệ");
   };
 
@@ -138,18 +301,20 @@ const AdminChatbot = () => {
       role: "user",
       message: messageToSend,
       timestamp: new Date(),
+      chartData: null,
     };
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setLoading(true);
 
     try {
-      const reply = await sendMessageToBackend(messageToSend);
+      const { reply, chartData } = await sendMessageToBackend(messageToSend);
       const assistantMessage = {
         id: Date.now() + 1,
         role: "assistant",
         message: reply,
         timestamp: new Date(),
+        chartData: chartData,
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
@@ -162,6 +327,7 @@ const AdminChatbot = () => {
         role: "assistant",
         message: `⚠️ Rất tiếc, không thể xử lý yêu cầu: ${errorMsg}. Vui lòng thử lại sau.`,
         timestamp: new Date(),
+        chartData: null,
       };
       setMessages((prev) => [...prev, errorAssistantMessage]);
     } finally {
@@ -274,9 +440,7 @@ const AdminChatbot = () => {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex gap-3 lg:gap-4 ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
+                className={`flex gap-3 lg:gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 {msg.role === "assistant" && (
                   <Avatar
@@ -286,30 +450,30 @@ const AdminChatbot = () => {
                   />
                 )}
                 <div
-                  className={`flex flex-col gap-1 max-w-[85%] lg:max-w-[75%] ${
-                    msg.role === "user" ? "items-end" : "items-start"
-                  }`}
+                  className={`flex flex-col gap-1 ${msg.role === "assistant" && msg.chartData ? "w-full" : "max-w-[90%] lg:max-w-[80%]"} ${msg.role === "user" ? "items-end" : "items-start"}`}
                 >
-                  {/* CHỈNH SỬA TẠI ĐÂY: Render HTML cho assistant, text thuần cho user */}
-                  <div
-                    className={`px-5 py-3.5 shadow-sm text-[15px] leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-blue-600 text-white rounded-2xl rounded-tr-sm"
-                        : "bg-white border border-slate-200 text-slate-700 rounded-2xl rounded-tl-sm"
-                    }`}
-                  >
-                    {msg.role === "user" ? (
-                      msg.message
-                    ) : (
-                      <div
-                        className="bot-message"
-                        dangerouslySetInnerHTML={{
-                          __html: formatMarkdownToHtml(msg.message),
-                        }}
-                      />
-                    )}
-                  </div>
-
+                  {msg.role === "assistant" && msg.chartData ? (
+                    <ChartRenderer chartData={msg.chartData} />
+                  ) : (
+                    <div
+                      className={`px-5 py-3.5 shadow-sm text-[15px] leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-blue-600 text-white rounded-2xl rounded-tr-sm"
+                          : "bg-white border border-slate-200 text-slate-700 rounded-2xl rounded-tl-sm"
+                      }`}
+                    >
+                      {msg.role === "user" ? (
+                        msg.message
+                      ) : (
+                        <div
+                          className="bot-message"
+                          dangerouslySetInnerHTML={{
+                            __html: formatMarkdownToHtml(msg.message),
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 px-1">
                     <span className="text-[11px] text-slate-400 font-medium">
                       {msg.timestamp.toLocaleTimeString("vi-VN", {
@@ -398,7 +562,6 @@ const AdminChatbot = () => {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background-color: #94a3b8;
         }
-        /* Style cho bot-message đảm bảo bullet và heading đẹp */
         .bot-message ul, .bot-message ol {
           margin: 0.5rem 0;
           padding-left: 1.5rem;

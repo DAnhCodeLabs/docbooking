@@ -521,10 +521,11 @@ export const cancelAppointment = async (
   }
 
   // 5. Cập nhật slot (atomic)
+  // Chấp nhận cả "booked" (online confirmed) và "pending_payment" (offline)
   const slotUpdateResult = await Slot.updateOne(
     {
       _id: slot._id,
-      status: "booked",
+      status: { $in: ["booked", "pending_payment"] },
       appointmentId: appointment._id,
     },
     { status: "available", appointmentId: null },

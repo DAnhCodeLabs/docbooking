@@ -22,13 +22,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   Legend,
-  Pie,
-  PieChart,
   Line,
   LineChart,
-  CartesianGrid,
+  Pie,
+  PieChart,
   Tooltip as ReTooltip,
   ResponsiveContainer,
   XAxis,
@@ -98,11 +98,12 @@ const initialMessages = [
 
 const quickPrompts = [
   "Thống kê doanh thu toàn hệ thống",
-  "Doanh thu tuần này",
-  "Doanh thu tháng trước",
-  "Danh sách bác sĩ chưa duyệt",
+  "Thống kê doanh thu tuần này",
+  "Thống kê lịch hẹn",
+  "Top bác sĩ có ca khám nhiều nhất đã hoàn thành",
+  "Có bao nhiêu bác sĩ chờ duyệt?",
+  "Cho anh xem danh sách bệnh viện chưa duyệt",
 ];
-
 const generateSessionId = () => {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 10);
@@ -220,18 +221,24 @@ const ChartRenderer = ({ chartData }) => {
                 <YAxis
                   tick={{ fontSize: 12 }}
                   tickFormatter={(value) => {
-                    if (line.yAxis?.label?.includes("VNĐ")) {
+                    // Nguyên tắc 2: Giữ nguyên logic VNĐ cũ, bổ sung dynamic suffix mới
+                    if (line.yAxis?.label?.includes("VNĐ"))
                       return value.toLocaleString("vi-VN");
-                    }
                     return value;
                   }}
                 />
                 <ReTooltip
                   formatter={(value) => {
-                    if (line.yAxis?.label?.includes("VNĐ")) {
-                      return value.toLocaleString("vi-VN") + " VNĐ";
+                    const formattedValue = value.toLocaleString("vi-VN");
+                    // Ưu tiên 1: Lấy suffix động từ Backend (Ví dụ: " ca")
+                    if (line.yAxis?.suffix) {
+                      return formattedValue + line.yAxis.suffix;
                     }
-                    return value.toLocaleString("vi-VN");
+                    // Ưu tiên 2 (Tương thích ngược): Xử lý VNĐ cho biểu đồ doanh thu cũ
+                    if (line.yAxis?.label?.includes("VNĐ")) {
+                      return formattedValue + " VNĐ";
+                    }
+                    return formattedValue;
                   }}
                   labelFormatter={(label) => `${label}`}
                   contentStyle={{ fontSize: 14, borderRadius: 8 }}

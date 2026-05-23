@@ -130,8 +130,19 @@ export const getDashboardStats = async (startDate, endDate) => {
 
     // 5. Thống kê doanh thu (dựa trên thời điểm thanh toán thành công)
     const onlineRevenueAgg = await Payment.aggregate([
+      // Bổ sung lookup để nối với bảng Appointment
+      {
+        $lookup: {
+          from: "appointments",
+          localField: "appointmentId",
+          foreignField: "_id",
+          as: "appointmentInfo",
+        },
+      },
+      { $unwind: "$appointmentInfo" },
       {
         $match: {
+          "appointmentInfo.paymentMethod": "online", // Chặn đứng các bản ghi Payment được sinh ra từ luồng Offline
           status: "paid",
           updatedAt: { $gte: from, $lte: to },
         },
@@ -471,6 +482,7 @@ export const getDashboardStats = async (startDate, endDate) => {
       { $unwind: "$scheduleInfo" },
       {
         $match: {
+          "appointmentInfo.paymentMethod": "online",
           status: "paid",
           "scheduleInfo.date": { $gte: from, $lte: to },
         },

@@ -9,14 +9,12 @@ import DoctorProfile from "../../../models/DoctorProfile.js";
 import Payment from "../../../models/Payment.js";
 import RevenueSplit from "../../../models/RevenueSplit.js";
 import Specialty from "../../../models/Specialty.js";
+import User from "../../../models/User.js";
 
 // ===============================
-// 2. HELPER FUNCTIONS (DRY)
+// 2. HELPER FUNCTIONS (EXTREME DRY)
 // ===============================
 
-/**
- * Chuẩn hóa chuỗi tiếng Việt (bỏ dấu, lowercase, chỉ giữ a-z0-9 và khoảng trắng)
- */
 const normalizeVietnamese = (str) => {
   if (!str) return "";
   return str
@@ -29,25 +27,19 @@ const normalizeVietnamese = (str) => {
     .trim();
 };
 
-/**
- * Tìm kiếm mờ (fuzzy) trong danh sách các document dựa trên tên (fieldName mặc định "name" hoặc "clinicName")
- * Trả về document khớp nhất hoặc null.
- */
 const fuzzyFindByName = (items, queryName, fieldName = "name") => {
-  if (!queryName || queryName.length < 2 || !items.length) return null;
-
-  const normalizedQuery = normalizeVietnamese(queryName);
-  const queryWords = normalizedQuery.split(/\s+/).filter((w) => w.length >= 2);
+  if (!queryName || queryName.length < 2 || !items?.length) return null;
+  const queryWords = normalizeVietnamese(queryName)
+    .split(/\s+/)
+    .filter((w) => w.length >= 2);
   if (!queryWords.length) return null;
 
-  let bestMatch = null;
-  let maxRatio = 0;
-
+  let bestMatch = null,
+    maxRatio = 0;
   for (const item of items) {
-    const itemName = item[fieldName];
-    const normalizedItem = normalizeVietnamese(itemName);
     const matched = queryWords.reduce(
-      (count, w) => count + (normalizedItem.includes(w) ? 1 : 0),
+      (count, w) =>
+        count + (normalizeVietnamese(item[fieldName]).includes(w) ? 1 : 0),
       0,
     );
     const ratio = matched / queryWords.length;
@@ -60,17 +52,46 @@ const fuzzyFindByName = (items, queryName, fieldName = "name") => {
 };
 
 /**
- * Map statusFilter (approved/pending) sang mảng status trong DB
+ * DRY: Tìm kiếm thực thể chung (Exact -> Fuzzy -> Populate)
  */
-const getDoctorStatuses = (statusFilter) => {
-  if (statusFilter === "approved") return ["active"];
-  if (statusFilter === "pending") return ["pending", "pending_admin_approval"];
-  return ["active"]; // fallback
+const smartFind = async (
+  Model,
+  queryName,
+  fieldName,
+  baseFilter = {},
+  populates = [],
+) => {
+  if (!queryName || queryName.length < 2) return null;
+
+  // 1. Exact Match
+  let exactQuery = Model.findOne({
+    [fieldName]: { $regex: new RegExp(`^${queryName}$`, "i") },
+    ...baseFilter,
+  });
+  populates.forEach(
+    (p) => (exactQuery = exactQuery.populate(p.path, p.select)),
+  );
+  const exactMatch = await exactQuery.lean();
+  if (exactMatch) return exactMatch;
+
+  // 2. Fuzzy Match (chỉ select fieldName và _id để tối ưu RAM)
+  const allItems = await Model.find(baseFilter).select(fieldName).lean();
+  const bestMatch = fuzzyFindByName(allItems, queryName, fieldName);
+  if (!bestMatch) return null;
+
+  // 3. Re-fetch best match với đầy đủ dữ liệu
+  let fuzzyQuery = Model.findById(bestMatch._id);
+  populates.forEach(
+    (p) => (fuzzyQuery = fuzzyQuery.populate(p.path, p.select)),
+  );
+  return await fuzzyQuery.lean();
 };
 
-/**
- * Format một doctor object thành output chuẩn
- */
+const getDoctorStatuses = (statusFilter) =>
+  statusFilter === "pending"
+    ? ["pending", "pending_admin_approval"]
+    : ["active"];
+
 const formatDoctorOutput = (doc) => ({
   id: doc._id,
   fullName: doc.user?.fullName || null,
@@ -81,426 +102,329 @@ const formatDoctorOutput = (doc) => ({
   clinicAddress: doc.clinicId?.address || null,
 });
 
-// ===============================
-// 3. EXPORTED FUNCTIONS (giữ nguyên tên, tham số, output)
-// ===============================
-
-// ----- Tìm kiếm chuyên khoa (chính xác trước, sau đó fuzzy) -----
-export const findSpecialtyByName = async (queryName) => {
-  if (!queryName || queryName.length < 2) return null;
-
-  // exact match
-  const exactMatch = await Specialty.findOne({
-    name: { $regex: new RegExp(`^${queryName}$`, "i") },
-    status: "active",
-  }).lean();
-  if (exactMatch) return exactMatch;
-
-  // fuzzy match
-  const allSpecialties = await Specialty.find({ status: "active" })
-    .select("name")
-    .lean();
-  return fuzzyFindByName(allSpecialties, queryName, "name");
-};
-
-// ----- Lấy danh sách bác sĩ theo chuyên khoa -----
-export const getDoctorsBySpecialty = async (
-  specialtyId,
-  statusFilter = "approved",
-) => {
-  const statuses = getDoctorStatuses(statusFilter);
-  const doctors = await DoctorProfile.find({
-    specialty: specialtyId,
-    status: { $in: statuses },
-  })
-    .populate({ path: "user", select: "fullName" })
-    .populate("clinicId", "clinicName address")
-    .sort({ totalReviews: -1 })
-    .limit(10)
-    .lean();
-
-  return doctors.filter((doc) => doc.user?.fullName).map(formatDoctorOutput);
-};
-
-// ----- Đếm số lượng bác sĩ theo trạng thái -----
-export const getDoctorCountByStatus = async (statuses) => {
-  try {
-    return await DoctorProfile.countDocuments({ status: { $in: statuses } });
-  } catch (error) {
-    console.error(`[adminDataService] Lỗi đếm bác sĩ: ${error.message}`);
-    throw new Error("DB_QUERY_FAILED");
-  }
-};
-
-// ----- Tìm kiếm phòng khám (chính xác trước, sau đó fuzzy) -----
-export const findClinicByName = async (queryName) => {
-  if (!queryName || queryName.length < 2) return null;
-
-  // exact match
-  const exactMatch = await ClinicLead.findOne({
-    clinicName: { $regex: new RegExp(`^${queryName}$`, "i") },
-    status: { $in: ["resolved", "contacted"] },
-  }).lean();
-  if (exactMatch) return exactMatch;
-
-  // fuzzy match
-  const allClinics = await ClinicLead.find({
-    status: { $in: ["resolved", "contacted"] },
-  })
-    .select("clinicName address")
-    .lean();
-  return fuzzyFindByName(allClinics, queryName, "clinicName");
-};
-
-// ----- Lấy danh sách bác sĩ theo phòng khám -----
-export const getDoctorsByClinic = async (
-  clinicId,
-  approvalStatus = "approved",
-) => {
-  const statuses = getDoctorStatuses(approvalStatus);
-  const doctors = await DoctorProfile.find({
-    clinicId: clinicId,
-    status: { $in: statuses },
-  })
+const fetchDoctors = async (filter, limitSize) => {
+  const doctors = await DoctorProfile.find(filter)
     .populate("user", "fullName")
     .populate("clinicId", "clinicName address")
     .sort({ totalReviews: -1 })
-    .limit(20)
+    .limit(limitSize)
     .lean();
-
   return doctors.filter((doc) => doc.user?.fullName).map(formatDoctorOutput);
 };
 
-// ----- Lấy danh sách phòng khám theo trạng thái (trả về {_id, clinicName}) -----
-export const getClinicsByStatus = async (statuses) => {
+/**
+ * DRY: Gom 8 CountQueries thành 1 Aggregation Pipeline duy nhất
+ */
+const getAppointmentStats = async (matchFilter = {}) => {
+  const pipeline = [
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        paid: { $sum: { $cond: [{ $eq: ["$paymentStatus", "paid"] }, 1, 0] } },
+        unpaidFailed: {
+          $sum: {
+            $cond: [{ $in: ["$paymentStatus", ["pending", "failed"]] }, 1, 0],
+          },
+        },
+        completed: {
+          $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+        },
+        confirmed: {
+          $sum: { $cond: [{ $eq: ["$status", "confirmed"] }, 1, 0] },
+        },
+        checkedIn: {
+          $sum: { $cond: [{ $eq: ["$status", "checked_in"] }, 1, 0] },
+        },
+        pendingPayment: {
+          $sum: { $cond: [{ $eq: ["$status", "pending_payment"] }, 1, 0] },
+        },
+        cancelled: {
+          $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] },
+        },
+      },
+    },
+  ];
+
+  const result =
+    Object.keys(matchFilter).length > 0
+      ? await Appointment.aggregate([{ $match: matchFilter }, ...pipeline])
+      : await Appointment.aggregate(pipeline);
+
+  const stats = result[0] || {
+    total: 0,
+    paid: 0,
+    unpaidFailed: 0,
+    completed: 0,
+    confirmed: 0,
+    checkedIn: 0,
+    pendingPayment: 0,
+    cancelled: 0,
+  };
+  delete stats._id;
+  return stats;
+};
+
+/**
+ * DRY: Tái sử dụng pipeline tính tổng doanh thu thanh toán
+ */
+const getPaymentStats = async (matchFilter = {}) => {
+  // --- BẮT ĐẦU: DEEP PROBE DEBUG ---
   try {
-    return await ClinicLead.find(
-      { status: { $in: statuses } },
-      { clinicName: 1, _id: 1 },
-    ).lean();
-  } catch (error) {
-    console.error(
-      `[adminDataService] Lỗi lấy clinic theo status: ${error.message}`,
+    console.log(
+      `[DEBUG][DeepProbe] Đang kiểm tra chéo dữ liệu Offline giữa Appointment và Payment...`,
     );
-    throw new Error("DB_QUERY_FAILED");
+
+    // 1. Tìm thử 1 lịch hẹn Offline đã thanh toán bên bảng Appointment
+    const sampleOfflineAppt = await Appointment.findOne({
+      paymentMethod: "offline",
+      paymentStatus: "paid",
+    }).lean();
+
+    if (sampleOfflineAppt) {
+      console.log(
+        `[DEBUG][DeepProbe] 1. TÌM THẤY Appointment Offline. ID: ${sampleOfflineAppt._id}`,
+      );
+
+      // 2. Tìm bản ghi Payment tương ứng với ID lịch hẹn này
+      const relatedPayment = await Payment.findOne({
+        $or: [
+          { appointmentId: sampleOfflineAppt._id },
+          { appointmentId: String(sampleOfflineAppt._id) },
+        ],
+      }).lean();
+
+      if (!relatedPayment) {
+        console.log(
+          `[DEBUG][DeepProbe] 2. 🚨 CẢNH BÁO ĐỎ: KHÔNG TÌM THẤY bản ghi nào trong bảng 'Payment' chứa appointmentId này!`,
+        );
+        console.log(
+          `[DEBUG][DeepProbe] -> KẾT LUẬN: Doanh thu Offline bị bằng 0 là do hệ thống Backend CHƯA TẠO bản ghi Payment khi thu tiền mặt.`,
+        );
+      } else {
+        console.log(
+          `[DEBUG][DeepProbe] 2. TÌM THẤY Payment. Dữ liệu:`,
+          JSON.stringify(relatedPayment),
+        );
+        console.log(
+          `[DEBUG][DeepProbe] -> KẾT LUẬN: Payment có tồn tại. Vấn đề nằm ở cấu trúc data bên trong Payment (VD: field 'amount' bị rỗng).`,
+        );
+      }
+    } else {
+      console.log(
+        `[DEBUG][DeepProbe] 1. Không có Lịch hẹn Offline nào thoả mãn điều kiện.`,
+      );
+    }
+  } catch (err) {
+    console.error(`[DEBUG][DeepProbe] Lỗi khi chạy Probe:`, err.message);
   }
+  console.log(
+    `[DEBUG][RevenueStats][DataService] Bắt đầu chạy Aggregation tính doanh thu. Bộ lọc (Match Filter):`,
+    JSON.stringify(matchFilter),
+  );
+  const startTime = Date.now();
+
+  const result = await Payment.aggregate([
+    {
+      $match: {
+        status: { $in: ["paid", "completed", "success"] },
+        $or: [
+          { refundStatus: { $ne: "completed" } },
+          { refundStatus: { $exists: false } },
+        ],
+        ...matchFilter,
+      },
+    },
+    // 1. Ép kiểu ID an toàn để Lookup không bị trượt
+    {
+      $addFields: {
+        appointmentIdObj: {
+          $convert: {
+            input: "$appointmentId",
+            to: "objectId",
+            onError: "$appointmentId", // Giữ nguyên nếu lỗi
+            onNull: null,
+          },
+        },
+      },
+    },
+    // 2. Lookup lấy thông tin gốc từ bảng Appointment
+    {
+      $lookup: {
+        from: "appointments",
+        localField: "appointmentIdObj",
+        foreignField: "_id",
+        as: "appointment",
+      },
+    },
+    { $unwind: { path: "$appointment", preserveNullAndEmptyArrays: true } },
+
+    // 3. [HOTFIX]: Xác định nguồn chân lý (Source of Truth) cho hình thức thanh toán
+    {
+      $addFields: {
+        effectivePaymentMethod: {
+          // ƯU TIÊN 1: Lấy phương thức thanh toán từ Appointment (Bản ghi chốt ca khám cuối cùng)
+          // ƯU TIÊN 2: Nếu không có (Lịch hẹn bị xoá/lỗi), mới dùng tạm của bảng Payment
+          $ifNull: ["$appointment.paymentMethod", "$paymentMethod"],
+        },
+      },
+    },
+
+    // 4. Gom nhóm và tính toán doanh thu cực kỳ rành mạch dựa trên effectivePaymentMethod
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$amount" },
+        totalTransactions: { $sum: 1 },
+        onlineRevenue: {
+          $sum: {
+            $cond: [
+              { $eq: ["$effectivePaymentMethod", "online"] },
+              "$amount",
+              0,
+            ],
+          },
+        },
+        offlineRevenue: {
+          $sum: {
+            $cond: [
+              { $eq: ["$effectivePaymentMethod", "offline"] },
+              "$amount",
+              0,
+            ],
+          },
+        },
+        onlineCount: {
+          $sum: {
+            $cond: [{ $eq: ["$effectivePaymentMethod", "online"] }, 1, 0],
+          },
+        },
+        offlineCount: {
+          $sum: {
+            $cond: [{ $eq: ["$effectivePaymentMethod", "offline"] }, 1, 0],
+          },
+        },
+      },
+    },
+  ]);
+
+  const data = result[0] || {
+    totalRevenue: 0,
+    totalTransactions: 0,
+    onlineRevenue: 0,
+    offlineRevenue: 0,
+    onlineCount: 0,
+    offlineCount: 0,
+  };
+
+  const executionTime = Date.now() - startTime;
+  console.log(
+    `[DEBUG][RevenueStats][DataService] Hoàn thành Aggregation trong ${executionTime}ms. Kết quả: Tổng = ${data.totalRevenue} VNĐ | Online = ${data.onlineRevenue} | Offline = ${data.offlineRevenue}`,
+  );
+
+  return {
+    ...data,
+    averageRevenue:
+      data.totalTransactions > 0
+        ? data.totalRevenue / data.totalTransactions
+        : 0,
+  };
 };
 
-// ----- Lấy chi tiết phòng khám (kèm specialties) -----
-export const getClinicDetails = async (queryName) => {
-  if (!queryName || queryName.length < 2) return null;
+// ===============================
+// 3. EXPORTED FUNCTIONS
+// ===============================
 
-  // exact match
-  let clinic = await ClinicLead.findOne({
-    clinicName: { $regex: new RegExp(`^${queryName}$`, "i") },
-  })
-    .populate("specialties", "name")
-    .lean();
-  if (clinic) return clinic;
+export const findSpecialtyByName = (queryName) =>
+  smartFind(Specialty, queryName, "name", { status: "active" });
 
-  // fuzzy match
-  const allClinics = await ClinicLead.find({}).select("clinicName").lean();
-  const bestMatch = fuzzyFindByName(allClinics, queryName, "clinicName");
-  if (bestMatch) {
-    clinic = await ClinicLead.findById(bestMatch._id)
-      .populate("specialties", "name")
-      .lean();
-    return clinic;
-  }
-  return null;
-};
+export const findClinicByName = (queryName) =>
+  smartFind(ClinicLead, queryName, "clinicName", {
+    status: { $in: ["resolved", "contacted"] },
+  });
 
-// ----- Thống kê tổng số lịch hẹn (toàn hệ thống) -----
-export const getTotalAppointmentStats = async () => {
-  try {
-    const [
-      total,
-      paid,
-      unpaidFailed,
-      completed,
-      confirmed,
-      checkedIn,
-      pendingPayment,
-      cancelled,
-    ] = await Promise.all([
-      Appointment.countDocuments({}),
-      Appointment.countDocuments({ paymentStatus: "paid" }),
-      Appointment.countDocuments({
-        paymentStatus: { $in: ["pending", "failed"] },
-      }),
-      Appointment.countDocuments({ status: "completed" }),
-      Appointment.countDocuments({ status: "confirmed" }),
-      Appointment.countDocuments({ status: "checked_in" }),
-      Appointment.countDocuments({ status: "pending_payment" }),
-      Appointment.countDocuments({ status: "cancelled" }),
-    ]);
-    return {
-      total,
-      paid,
-      unpaidFailed,
-      completed,
-      confirmed,
-      checkedIn,
-      pendingPayment,
-      cancelled,
-    };
-  } catch (error) {
-    console.error(
-      `[adminDataService] Lỗi thống kê lịch hẹn toàn bộ: ${error.message}`,
-    );
-    throw new Error("DB_QUERY_FAILED");
-  }
-};
+export const getClinicDetails = (queryName) =>
+  smartFind(ClinicLead, queryName, "clinicName", {}, [
+    { path: "specialties", select: "name" },
+  ]);
 
-// ----- Thống kê lịch hẹn theo khoảng thời gian -----
-export const getAppointmentStatsByDateRange = async (startUTC, endUTC) => {
+export const getDoctorsBySpecialty = (specialtyId, statusFilter = "approved") =>
+  fetchDoctors(
+    {
+      specialty: specialtyId,
+      status: { $in: getDoctorStatuses(statusFilter) },
+    },
+    10,
+  );
+
+export const getDoctorsByClinic = (clinicId, approvalStatus = "approved") =>
+  fetchDoctors(
+    { clinicId, status: { $in: getDoctorStatuses(approvalStatus) } },
+    20,
+  );
+
+export const getDoctorCountByStatus = (statuses) =>
+  DoctorProfile.countDocuments({ status: { $in: statuses } });
+
+export const getClinicsByStatus = (statuses) =>
+  ClinicLead.find(
+    { status: { $in: statuses } },
+    { clinicName: 1, _id: 1 },
+  ).lean();
+
+export const getTotalAppointmentStats = () => getAppointmentStats({});
+
+export const getAppointmentStatsByDateRange = (startUTC, endUTC) => {
   if (!startUTC || !endUTC) throw new Error("INVALID_DATE_RANGE");
-  const filter = { createdAt: { $gte: startUTC, $lt: endUTC } };
-  try {
-    const [
-      total,
-      paid,
-      unpaidFailed,
-      completed,
-      confirmed,
-      checkedIn,
-      pendingPayment,
-      cancelled,
-    ] = await Promise.all([
-      Appointment.countDocuments(filter),
-      Appointment.countDocuments({ ...filter, paymentStatus: "paid" }),
-      Appointment.countDocuments({
-        ...filter,
-        paymentStatus: { $in: ["pending", "failed"] },
-      }),
-      Appointment.countDocuments({ ...filter, status: "completed" }),
-      Appointment.countDocuments({ ...filter, status: "confirmed" }),
-      Appointment.countDocuments({ ...filter, status: "checked_in" }),
-      Appointment.countDocuments({ ...filter, status: "pending_payment" }),
-      Appointment.countDocuments({ ...filter, status: "cancelled" }),
-    ]);
-    return {
-      total,
-      paid,
-      unpaidFailed,
-      completed,
-      confirmed,
-      checkedIn,
-      pendingPayment,
-      cancelled,
-    };
-  } catch (error) {
-    console.error(
-      `[adminDataService] Lỗi thống kê lịch hẹn theo khoảng: ${error.message}`,
-    );
-    throw new Error("DB_QUERY_FAILED");
-  }
+  return getAppointmentStats({ createdAt: { $gte: startUTC, $lt: endUTC } });
 };
 
-// ----- Lấy doanh thu theo ngày (breakdown) -----
 export const getDailyRevenueBreakdown = async (startUTC, endUTC) => {
-  try {
-    const pipeline = [
-      {
-        $match: {
-          status: "paid",
-          $or: [
-            { refundStatus: { $ne: "completed" } },
-            { refundStatus: { $exists: false } },
-          ],
-          createdAt: { $gte: startUTC, $lt: endUTC },
-        },
+  const result = await Payment.aggregate([
+    {
+      $match: {
+        status: "paid",
+        $or: [
+          { refundStatus: { $ne: "completed" } },
+          { refundStatus: { $exists: false } },
+        ],
+        createdAt: { $gte: startUTC, $lt: endUTC },
       },
-      {
-        $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-          totalRevenue: { $sum: "$amount" },
-          transactionCount: { $sum: 1 },
-        },
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+        totalRevenue: { $sum: "$amount" },
+        transactionCount: { $sum: 1 },
       },
-      { $sort: { _id: 1 } },
-    ];
-    const result = await Payment.aggregate(pipeline);
-    return result.map((day) => ({
-      date: day._id,
-      totalRevenue: day.totalRevenue,
-      transactionCount: day.transactionCount,
-    }));
-  } catch (error) {
-    console.error(
-      `[adminDataService] Lỗi lấy doanh thu theo ngày: ${error.message}`,
-    );
-    return [];
-  }
+    },
+    { $sort: { _id: 1 } },
+  ]);
+  return result.map((day) => ({
+    date: day._id,
+    totalRevenue: day.totalRevenue,
+    transactionCount: day.transactionCount,
+  }));
 };
 
-// ----- Thống kê doanh thu theo khoảng thời gian (có breakdown tùy chọn) -----
 export const getRevenueStatsByDateRange = async (
   startUTC,
   endUTC,
   needBreakdown = false,
 ) => {
-  try {
-    const pipeline = [
-      {
-        $match: {
-          status: "paid",
-          $or: [
-            { refundStatus: { $ne: "completed" } },
-            { refundStatus: { $exists: false } },
-          ],
-          createdAt: { $gte: startUTC, $lt: endUTC },
-        },
-      },
-      {
-        $lookup: {
-          from: "appointments",
-          localField: "appointmentId",
-          foreignField: "_id",
-          as: "appointment",
-        },
-      },
-      { $unwind: { path: "$appointment", preserveNullAndEmptyArrays: true } },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$amount" },
-          totalTransactions: { $sum: 1 },
-          onlineRevenue: {
-            $sum: {
-              $cond: [
-                { $eq: ["$appointment.paymentMethod", "online"] },
-                "$amount",
-                0,
-              ],
-            },
-          },
-          offlineRevenue: {
-            $sum: {
-              $cond: [
-                { $eq: ["$appointment.paymentMethod", "offline"] },
-                "$amount",
-                0,
-              ],
-            },
-          },
-          onlineCount: {
-            $sum: {
-              $cond: [{ $eq: ["$appointment.paymentMethod", "online"] }, 1, 0],
-            },
-          },
-          offlineCount: {
-            $sum: {
-              $cond: [{ $eq: ["$appointment.paymentMethod", "offline"] }, 1, 0],
-            },
-          },
-        },
-      },
-    ];
-    const result = await Payment.aggregate(pipeline);
-    const data = result[0] || {
-      totalRevenue: 0,
-      totalTransactions: 0,
-      onlineRevenue: 0,
-      offlineRevenue: 0,
-      onlineCount: 0,
-      offlineCount: 0,
-    };
-    const stats = {
-      totalRevenue: data.totalRevenue,
-      totalTransactions: data.totalTransactions,
-      averageRevenue:
-        data.totalTransactions > 0
-          ? data.totalRevenue / data.totalTransactions
-          : 0,
-      onlineRevenue: data.onlineRevenue,
-      offlineRevenue: data.offlineRevenue,
-      onlineCount: data.onlineCount,
-      offlineCount: data.offlineCount,
-    };
-    if (needBreakdown) {
-      stats.dailyBreakdown = await getDailyRevenueBreakdown(startUTC, endUTC);
-    }
-    return stats;
-  } catch (error) {
-    console.error(
-      `[adminDataService] Lỗi thống kê doanh thu theo khoảng: ${error.message}`,
-    );
-    throw new Error("DB_QUERY_FAILED");
-  }
+  const stats = await getPaymentStats({
+    createdAt: { $gte: startUTC, $lt: endUTC },
+  });
+  delete stats._id;
+  if (needBreakdown)
+    stats.dailyBreakdown = await getDailyRevenueBreakdown(startUTC, endUTC);
+  return stats;
 };
 
-// ----- Thống kê tổng doanh thu (toàn hệ thống) -----
 export const getTotalRevenueStats = async () => {
-  try {
-    // 1. Thống kê thanh toán (giống pipeline của getRevenueStatsByDateRange nhưng không giới hạn thời gian)
-    const paymentPipeline = [
-      {
-        $match: {
-          status: "paid",
-          $or: [
-            { refundStatus: { $ne: "completed" } },
-            { refundStatus: { $exists: false } },
-          ],
-        },
-      },
-      {
-        $lookup: {
-          from: "appointments",
-          localField: "appointmentId",
-          foreignField: "_id",
-          as: "appointment",
-        },
-      },
-      { $unwind: { path: "$appointment", preserveNullAndEmptyArrays: true } },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$amount" },
-          totalTransactions: { $sum: 1 },
-          onlineRevenue: {
-            $sum: {
-              $cond: [
-                { $eq: ["$appointment.paymentMethod", "online"] },
-                "$amount",
-                0,
-              ],
-            },
-          },
-          offlineRevenue: {
-            $sum: {
-              $cond: [
-                { $eq: ["$appointment.paymentMethod", "offline"] },
-                "$amount",
-                0,
-              ],
-            },
-          },
-          onlineCount: {
-            $sum: {
-              $cond: [{ $eq: ["$appointment.paymentMethod", "online"] }, 1, 0],
-            },
-          },
-          offlineCount: {
-            $sum: {
-              $cond: [{ $eq: ["$appointment.paymentMethod", "offline"] }, 1, 0],
-            },
-          },
-        },
-      },
-    ];
-    const paymentResult = await Payment.aggregate(paymentPipeline);
-    const paymentData = paymentResult[0] || {
-      totalRevenue: 0,
-      totalTransactions: 0,
-      onlineRevenue: 0,
-      offlineRevenue: 0,
-      onlineCount: 0,
-      offlineCount: 0,
-    };
-
-    // 2. Thống kê phân chia lợi nhuận từ RevenueSplit
-    const splitPipeline = [
+  const [paymentData, splitResult] = await Promise.all([
+    getPaymentStats(),
+    RevenueSplit.aggregate([
       { $match: { status: "completed" } },
       {
         $group: {
@@ -509,81 +433,97 @@ export const getTotalRevenueStats = async () => {
           totalClinicAmount: { $sum: "$clinicAmount" },
         },
       },
-    ];
-    const splitResult = await RevenueSplit.aggregate(splitPipeline);
-    const splitData = splitResult[0] || {
-      totalPlatformAmount: 0,
-      totalClinicAmount: 0,
-    };
-
-    const averageRevenue =
-      paymentData.totalTransactions > 0
-        ? paymentData.totalRevenue / paymentData.totalTransactions
-        : 0;
-
-    return {
-      totalRevenue: paymentData.totalRevenue,
-      totalTransactions: paymentData.totalTransactions,
-      averageRevenue,
-      onlineRevenue: paymentData.onlineRevenue,
-      offlineRevenue: paymentData.offlineRevenue,
-      onlineCount: paymentData.onlineCount,
-      offlineCount: paymentData.offlineCount,
-      totalPlatformRevenue: splitData.totalPlatformAmount,
-      totalClinicRevenue: splitData.totalClinicAmount,
-    };
-  } catch (error) {
-    console.error(
-      `[adminDataService] Lỗi thống kê doanh thu: ${error.message}`,
-    );
-    throw new Error("DB_QUERY_FAILED");
-  }
+    ]),
+  ]);
+  delete paymentData._id;
+  const splitData = splitResult[0] || {
+    totalPlatformAmount: 0,
+    totalClinicAmount: 0,
+  };
+  return {
+    ...paymentData,
+    totalPlatformRevenue: splitData.totalPlatformAmount,
+    totalClinicRevenue: splitData.totalClinicAmount,
+  };
 };
 
-// ========== THÊM MỚI ==========
-/**
- * Lấy doanh thu thực nhận của phòng khám theo từng ngày trong khoảng thời gian
- * @param {ObjectId} clinicId
- * @param {Date} startUTC
- * @param {Date} endUTC
- * @returns {Promise<Array<{date: string, revenue: number}>>}
- */
 export const getClinicDailyRevenue = async (clinicId, startUTC, endUTC) => {
+  const result = await RevenueSplit.aggregate([
+    {
+      $match: {
+        clinicId: clinicId,
+        status: "completed",
+        calculatedAt: { $gte: startUTC, $lt: endUTC },
+      },
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$calculatedAt" } },
+        totalClinicAmount: { $sum: "$clinicAmount" },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+  return result.map((item) => ({
+    date: item._id,
+    revenue: item.totalClinicAmount,
+  }));
+};
+
+/**
+ * Lấy Top Bác sĩ có lịch hẹn đã hoàn thành nhiều nhất
+ */
+export const getTopDoctorsCompletedAppointments = async (limitSize = 5) => {
   console.log(
-    `[DEBUG][DataService] getClinicDailyRevenue called with clinicId=${clinicId}, startUTC=${startUTC.toISOString()}, endUTC=${endUTC.toISOString()}`,
+    `[DEBUG][TopDoctors][DataService] Bắt đầu chạy Aggregation kéo Top ${limitSize} bác sĩ...`,
   );
-  try {
-    const pipeline = [
-      {
-        $match: {
-          clinicId: clinicId,
-          status: "completed",
-          calculatedAt: { $gte: startUTC, $lt: endUTC },
-        },
+  const startTime = Date.now(); // Bắt đầu đếm giờ
+
+  const result = await Appointment.aggregate([
+    // 1. Lọc chỉ lấy lịch hẹn "completed"
+    { $match: { status: "completed" } },
+    // 2. Gom nhóm theo bác sĩ và đếm số lượng
+    {
+      $group: {
+        _id: "$doctor",
+        count: { $sum: 1 },
       },
-      {
-        $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$calculatedAt" } },
-          totalClinicAmount: { $sum: "$clinicAmount" },
-        },
+    },
+    // 3. Sắp xếp: Số lượng giảm dần. Nếu bằng nhau, xếp theo ID tăng dần (Tie-breaker)
+    { $sort: { count: -1, _id: 1 } },
+    // 4. Giới hạn số lượng (Top 5)
+    { $limit: limitSize },
+    // 5. Lookup sang collection users để lấy tên bác sĩ
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "doctorInfo",
       },
-      { $sort: { _id: 1 } },
-    ];
-    const result = await RevenueSplit.aggregate(pipeline);
+    },
+    { $unwind: "$doctorInfo" },
+    // 6. Project format output (KISS)
+    {
+      $project: {
+        _id: 0,
+        doctorId: "$_id",
+        doctorName: "$doctorInfo.fullName",
+        completedCount: "$count",
+      },
+    },
+  ]);
+
+  const executionTime = Date.now() - startTime;
+  console.log(
+    `[DEBUG][TopDoctors][DataService] Hoàn thành Aggregation trong ${executionTime}ms. Số lượng tìm thấy: ${result.length} bác sĩ.`,
+  );
+
+  if (result.length > 0) {
     console.log(
-      `[DEBUG][DataService] Aggregation result: ${result.length} days with data`,
-      JSON.stringify(result.slice(0, 3), null, 2),
+      `[DEBUG][TopDoctors][DataService] Dẫn đầu: BS. ${result[0].doctorName} (${result[0].completedCount} ca)`,
     );
-    const mapped = result.map((item) => ({
-      date: item._id,
-      revenue: item.totalClinicAmount,
-    }));
-    console.log(`[DEBUG][DataService] Mapped daily revenue:`, mapped);
-    return mapped;
-  } catch (error) {
-    console.error(
-      `[adminDataService] getClinicDailyRevenue error: ${error.message}`,
-    );
-    throw new Error("DB_QUERY_FAILED");
   }
+
+  return result;
 };

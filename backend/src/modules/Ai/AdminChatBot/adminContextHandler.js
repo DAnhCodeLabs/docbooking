@@ -1,7 +1,7 @@
 // backend/src/modules/Ai/AdminChat/adminContextHandler.js
 
 // ===============================
-// 1. IMPORTS (giữ nguyên)
+// 1. IMPORTS
 // ===============================
 import ClinicLead from "../../../models/ClinicLead.js";
 import Specialty from "../../../models/Specialty.js";
@@ -26,24 +26,19 @@ import {
   getRevenueStatsByDateRange,
   getTotalAppointmentStats,
   getTotalRevenueStats,
+  getTopDoctorsCompletedAppointments,
 } from "./adminDataService.js";
 
 // ===============================
-// 2. HELPERS (DRY)
+// 2. HELPERS (KISS & DRY)
 // ===============================
 
-/**
- * Xử lý lỗi chung cho DB query
- */
 const dbErrorResult = (intent, errorMsg = "DB_QUERY_FAILED") => ({
   intent,
   error: errorMsg,
   data: null,
 });
 
-/**
- * Xử lý case không tìm thấy specialty
- */
 const specialtyNotFoundResult = async (intent, queryName) => {
   const suggestions = await Specialty.find({ status: "active" })
     .limit(5)
@@ -58,9 +53,6 @@ const specialtyNotFoundResult = async (intent, queryName) => {
   };
 };
 
-/**
- * Xử lý case không tìm thấy clinic
- */
 const clinicNotFoundResult = async (intent, queryName) => {
   const suggestions = await ClinicLead.find({
     status: { $in: ["resolved", "contacted"] },
@@ -77,9 +69,6 @@ const clinicNotFoundResult = async (intent, queryName) => {
   };
 };
 
-/**
- * Chuyển đổi timeRange string sang date range object
- */
 const getDateRange = (timeRange) => {
   switch (timeRange) {
     case "today":
@@ -104,81 +93,70 @@ const getDateRange = (timeRange) => {
 };
 
 // ===============================
-// 3. INTENT HANDLERS
+// 3. INTENT HANDLERS (Core Logic)
 // ===============================
 
 const handlers = {
-  // ---------- Danh sách bác sĩ theo chuyên khoa ----------
-  list_doctors_by_specialty: async (parsed, effectiveStatus) => {
-    const { specialtyName } = parsed;
-    if (!specialtyName) {
+  list_doctors_by_specialty: async ({ specialtyName }, statusFilter) => {
+    if (!specialtyName)
       return {
         intent: "list_doctors_by_specialty",
         error: "MISSING_SPECIALTY_NAME",
         data: null,
       };
-    }
     const specialty = await findSpecialtyByName(specialtyName);
-    if (!specialty) {
-      return await specialtyNotFoundResult(
+    if (!specialty)
+      return specialtyNotFoundResult(
         "list_doctors_by_specialty",
         specialtyName,
       );
-    }
-    const doctors = await getDoctorsBySpecialty(specialty._id, effectiveStatus);
+
+    const doctors = await getDoctorsBySpecialty(specialty._id, statusFilter);
     return {
       intent: "list_doctors_by_specialty",
       specialty: { id: specialty._id, name: specialty.name },
       doctors,
       count: doctors.length,
-      statusFilter: effectiveStatus,
+      statusFilter,
       data: {
         specialtyName: specialty.name,
         doctors,
         count: doctors.length,
-        statusFilter: effectiveStatus,
+        statusFilter,
       },
     };
   },
 
-  // ---------- Đếm bác sĩ theo trạng thái duyệt ----------
-  count_doctors_by_approval_status: async (parsed) => {
-    const { statusType } = parsed;
-    const isPending = statusType === "pending";
-    const statusesArr = isPending
-      ? ["pending", "pending_admin_approval"]
-      : ["active"];
-    const statusLabelText = isPending ? "chưa duyệt" : "đã duyệt";
-    try {
-      const count = await getDoctorCountByStatus(statusesArr);
-      return {
-        intent: "count_doctors_by_approval_status",
-        statusType,
-        statusLabel: statusLabelText,
-        count,
-        statusFilter: statusType,
-        data: { count, statusLabel: statusLabelText, statusFilter: statusType },
-      };
-    } catch {
-      return dbErrorResult("count_doctors_by_approval_status");
-    }
+  count_doctors_by_approval_status: async ({ statusType }) => {
+    const statusesArr =
+      statusType === "pending"
+        ? ["pending", "pending_admin_approval"]
+        : ["active"];
+    const statusLabel = statusType === "pending" ? "chưa duyệt" : "đã duyệt";
+    const count = await getDoctorCountByStatus(statusesArr);
+
+    return {
+      intent: "count_doctors_by_approval_status",
+      statusType,
+      statusLabel,
+      count,
+      statusFilter: statusType,
+      data: { count, statusLabel, statusFilter: statusType },
+    };
   },
 
-  // ---------- Danh sách bác sĩ theo phòng khám ----------
-  list_doctors_by_clinic: async (parsed, effectiveStatus) => {
-    const { clinicName } = parsed;
-    if (!clinicName) {
+  list_doctors_by_clinic: async ({ clinicName }, statusFilter) => {
+    if (!clinicName)
       return {
         intent: "list_doctors_by_clinic",
         error: "MISSING_CLINIC_NAME",
         data: null,
       };
-    }
     const clinic = await findClinicByName(clinicName);
-    if (!clinic) {
-      return await clinicNotFoundResult("list_doctors_by_clinic", clinicName);
-    }
-    const doctors = await getDoctorsByClinic(clinic._id, effectiveStatus);
+    if (!clinic)
+      return clinicNotFoundResult("list_doctors_by_clinic", clinicName);
+
+    const doctors = await getDoctorsByClinic(clinic._id, statusFilter);
     return {
       intent: "list_doctors_by_clinic",
       clinic: {
@@ -188,236 +166,186 @@ const handlers = {
       },
       doctors,
       count: doctors.length,
-      statusFilter: effectiveStatus,
+      statusFilter,
       data: {
         clinicName: clinic.clinicName,
         doctors,
         count: doctors.length,
-        statusFilter: effectiveStatus,
+        statusFilter,
       },
     };
   },
 
-  // ---------- Danh sách phòng khám theo trạng thái ----------
-  list_clinics_by_approval_status: async (parsed) => {
-    const { statuses, statusLabel } = parsed;
-    if (!statuses || statuses.length === 0) {
+  list_clinics_by_approval_status: async ({ statuses, statusLabel }) => {
+    if (!statuses?.length)
       return {
         intent: "list_clinics_by_approval_status",
         error: "MISSING_STATUS",
         data: null,
       };
-    }
-    try {
-      const clinics = await getClinicsByStatus(statuses);
-      const count = clinics.length;
-      return {
-        intent: "list_clinics_by_approval_status",
-        clinics: clinics.map((c) => ({ id: c._id, name: c.clinicName })),
-        count,
-        statusFilter: statuses,
-        statusLabel,
-        data: { clinics, count, statusLabel },
-      };
-    } catch {
-      return dbErrorResult("list_clinics_by_approval_status");
-    }
+    const clinics = await getClinicsByStatus(statuses);
+    return {
+      intent: "list_clinics_by_approval_status",
+      clinics: clinics.map((c) => ({ id: c._id, name: c.clinicName })),
+      count: clinics.length,
+      statusFilter: statuses,
+      statusLabel,
+      data: { clinics, count: clinics.length, statusLabel },
+    };
   },
 
-  // ---------- Chi tiết phòng khám ----------
-  get_clinic_details: async (parsed) => {
-    const { clinicName } = parsed;
-    if (!clinicName || clinicName.length < 2) {
+  get_clinic_details: async ({ clinicName }) => {
+    if (!clinicName || clinicName.length < 2)
       return {
         intent: "get_clinic_details",
         error: "MISSING_CLINIC_NAME",
         data: null,
       };
-    }
-    try {
-      const clinicDetail = await getClinicDetails(clinicName);
-      if (!clinicDetail) {
-        return await clinicNotFoundResult("get_clinic_details", clinicName);
-      }
-      return {
-        intent: "get_clinic_details",
-        clinic: clinicDetail,
-        data: { clinic: clinicDetail },
-      };
-    } catch {
-      return dbErrorResult("get_clinic_details");
-    }
+    const clinicDetail = await getClinicDetails(clinicName);
+    if (!clinicDetail)
+      return clinicNotFoundResult("get_clinic_details", clinicName);
+    return {
+      intent: "get_clinic_details",
+      clinic: clinicDetail,
+      data: { clinic: clinicDetail },
+    };
   },
 
-  // ---------- Thống kê tổng lịch hẹn ----------
   total_appointment_stats: async () => {
-    try {
-      const stats = await getTotalAppointmentStats();
-      return { intent: "total_appointment_stats", stats, data: stats };
-    } catch {
-      return dbErrorResult("total_appointment_stats");
-    }
+    const stats = await getTotalAppointmentStats();
+    return { intent: "total_appointment_stats", stats, data: stats };
   },
 
-  // ---------- Thống kê lịch hẹn theo thời gian ----------
-  appointment_stats_by_time: async (parsed) => {
-    const { timeRange } = parsed;
-    if (!timeRange) {
+  appointment_stats_by_time: async ({ timeRange }) => {
+    if (!timeRange)
       return {
         intent: "appointment_stats_by_time",
         error: "MISSING_TIME_RANGE",
         data: null,
       };
-    }
     const range = getDateRange(timeRange);
-    if (!range) {
+    if (!range)
       return {
         intent: "appointment_stats_by_time",
         error: "INVALID_TIME_RANGE",
         data: null,
       };
-    }
-    try {
-      const stats = await getAppointmentStatsByDateRange(
-        range.startUTC,
-        range.endUTC,
-      );
-      return {
-        intent: "appointment_stats_by_time",
-        timeRange,
-        stats,
-        data: { stats, timeRange, range },
-      };
-    } catch {
-      return dbErrorResult("appointment_stats_by_time");
-    }
-  },
 
-  // ---------- Thống kê tổng doanh thu ----------
-  total_revenue_stats: async () => {
-    try {
-      const stats = await getTotalRevenueStats();
-      return { intent: "total_revenue_stats", stats, data: stats };
-    } catch {
-      return dbErrorResult("total_revenue_stats");
-    }
-  },
-
-  // ---------- Thống kê doanh thu theo thời gian ----------
-  revenue_stats_by_time: async (parsed) => {
-    const { timeRange } = parsed;
-    if (!timeRange) {
-      return {
-        intent: "revenue_stats_by_time",
-        error: "MISSING_TIME_RANGE",
-        data: null,
-      };
-    }
-    const range = getDateRange(timeRange);
-    if (!range) {
-      return {
-        intent: "revenue_stats_by_time",
-        error: "INVALID_TIME_RANGE",
-        data: null,
-      };
-    }
-    const needBreakdown = !["today", "yesterday"].includes(timeRange);
-    try {
-      const stats = await getRevenueStatsByDateRange(
-        range.startUTC,
-        range.endUTC,
-        needBreakdown,
-      );
-      return {
-        intent: "revenue_stats_by_time",
-        timeRange,
-        stats,
-        data: { stats, timeRange, range },
-      };
-    } catch {
-      return dbErrorResult("revenue_stats_by_time");
-    }
-  },
-
-  // ---------- Doanh thu phòng khám theo tháng (chi tiết từng ngày) ----------
-  clinic_revenue_by_month: async (parsed) => {
-    console.log(
-      `[DEBUG][Context] Starting clinic_revenue_by_month handler with parsed:`,
-      parsed,
+    const stats = await getAppointmentStatsByDateRange(
+      range.startUTC,
+      range.endUTC,
     );
-    const { clinicName, month, year, monthOffset } = parsed;
-    if (!clinicName) {
+    return {
+      intent: "appointment_stats_by_time",
+      timeRange,
+      stats,
+      data: { stats, timeRange, range },
+    };
+  },
+
+  total_revenue_stats: async () => {
+    console.log(
+      `[DEBUG][RevenueStats][ContextHandler] Bắt đầu gọi getTotalRevenueStats() để lấy thống kê tổng.`,
+    );
+    const stats = await getTotalRevenueStats();
+    console.log(
+      `[DEBUG][RevenueStats][ContextHandler] Lấy thành công. Nền tảng: ${stats.totalPlatformRevenue}, Bệnh viện: ${stats.totalClinicRevenue}`,
+    );
+    return { intent: "total_revenue_stats", stats, data: stats };
+  },
+
+  revenue_stats_by_time: async ({ timeRange }) => {
+    if (!timeRange)
+      return {
+        intent: "revenue_stats_by_time",
+        error: "MISSING_TIME_RANGE",
+        data: null,
+      };
+    const range = getDateRange(timeRange);
+    if (!range)
+      return {
+        intent: "revenue_stats_by_time",
+        error: "INVALID_TIME_RANGE",
+        data: null,
+      };
+
+    const needBreakdown = timeRange !== "today" && timeRange !== "yesterday";
+    const stats = await getRevenueStatsByDateRange(
+      range.startUTC,
+      range.endUTC,
+      needBreakdown,
+    );
+    return {
+      intent: "revenue_stats_by_time",
+      timeRange,
+      stats,
+      data: { stats, timeRange, range },
+    };
+  },
+
+  clinic_revenue_by_month: async ({ clinicName, month, year, monthOffset }) => {
+    if (!clinicName)
       return {
         intent: "clinic_revenue_by_month",
         error: "MISSING_CLINIC_NAME",
         data: null,
       };
-    }
-    // Tìm clinic (fuzzy)
     const clinic = await findClinicByName(clinicName);
-    if (!clinic) {
-      console.warn(`[DEBUG][Context] Clinic not found: "${clinicName}"`);
-      return await clinicNotFoundResult("clinic_revenue_by_month", clinicName);
-    }
-    console.log(
-      `[DEBUG][Context] Found clinic: id=${clinic._id}, name=${clinic.clinicName}`,
-    );
-    // Xác định khoảng thời gian
-    let startUTC, endUTC;
-    if (month && year) {
-      const range = getSpecificMonthRange(year, month);
-      startUTC = range.startUTC;
-      endUTC = range.endUTC;
-      console.log(
-        `[DEBUG][Context] Specific month range: ${startUTC.toISOString()} -> ${endUTC.toISOString()}`,
-      );
-    } else if (monthOffset !== undefined) {
-      const range = getMonthLocalRange(monthOffset);
-      startUTC = range.startUTC;
-      endUTC = range.endUTC;
-      console.log(
-        `[DEBUG][Context] Relative month offset ${monthOffset}: ${startUTC.toISOString()} -> ${endUTC.toISOString()}`,
-      );
-    } else {
+    if (!clinic)
+      return clinicNotFoundResult("clinic_revenue_by_month", clinicName);
+
+    let range;
+    if (month && year) range = getSpecificMonthRange(year, month);
+    else if (monthOffset !== undefined) range = getMonthLocalRange(monthOffset);
+    else
       return {
         intent: "clinic_revenue_by_month",
         error: "MISSING_DATE_RANGE",
         data: null,
       };
-    }
-    // Lấy dữ liệu daily revenue
+
     const dailyRevenue = await getClinicDailyRevenue(
       clinic._id,
-      startUTC,
-      endUTC,
+      range.startUTC,
+      range.endUTC,
     );
-    console.log(
-      `[DEBUG][Context] Raw dailyRevenue (${dailyRevenue.length} entries):`,
-      dailyRevenue,
+
+    // Tối ưu hóa việc map doanh thu theo ngày
+    const dateMap = new Map(
+      dailyRevenue.map((item) => [item.date, item.revenue]),
     );
-    // Tạo mảng 30/31 ngày với giá trị 0 cho ngày không có giao dịch
-    const dateMap = new Map();
-    dailyRevenue.forEach((item) => dateMap.set(item.date, item.revenue));
-    const daysInMonth = dayjs(startUTC).daysInMonth();
-     console.log(`[DEBUG][Context] Days in month: ${daysInMonth}`);
-    const filledData = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${year || new Date(startUTC).getUTCFullYear()}-${String(month || new Date(startUTC).getUTCMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      filledData.push({
-        date: dateStr,
-        revenue: dateMap.get(dateStr) || 0,
-      });
-    }
-    console.log(
-      `[DEBUG][Context] Final filled data (${filledData.length} days), total revenue: ${filledData.reduce((s, d) => s + d.revenue, 0)}`,
-    );
+    const daysInMonth = dayjs(range.startUTC).daysInMonth();
+    const startD = new Date(range.startUTC);
+    const derivedYear = year || startD.getUTCFullYear();
+    const derivedMonth = month || startD.getUTCMonth() + 1;
+
+    const filledData = Array.from({ length: daysInMonth }, (_, i) => {
+      const dateStr = `${derivedYear}-${String(derivedMonth).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
+      return { date: dateStr, revenue: dateMap.get(dateStr) || 0 };
+    });
+
     return {
       intent: "clinic_revenue_by_month",
       clinic: { id: clinic._id, name: clinic.clinicName },
       dailyRevenue: filledData,
-      month: month || new Date(startUTC).getUTCMonth() + 1,
-      year: year || new Date(startUTC).getUTCFullYear(),
+      month: derivedMonth,
+      year: derivedYear,
       data: { clinicName: clinic.clinicName, dailyRevenue: filledData },
+    };
+  },
+
+  top_doctors_completed_appointments: async () => {
+    console.log(
+      `[DEBUG][TopDoctors][ContextHandler] Bắt đầu gọi DataService để lấy dữ liệu`,
+    );
+    const topDoctors = await getTopDoctorsCompletedAppointments(5);
+    console.log(
+      `[DEBUG][TopDoctors][ContextHandler] Đóng gói thành công. Payload size: ${topDoctors?.length || 0}`,
+    );
+    return {
+      intent: "top_doctors_completed_appointments",
+      topDoctors,
+      data: { topDoctors },
     };
   },
 };
@@ -427,9 +355,9 @@ const handlers = {
 // ===============================
 
 export const fetchAdminContext = async (parsed, inheritedStatus = null) => {
-  const { intent, requiresClarification, clarificationMessage } = parsed;
+  const { intent, requiresClarification, clarificationMessage, statusFilter } =
+    parsed;
 
-  // Ưu tiên làm rõ nếu cần
   if (requiresClarification) {
     return {
       intent,
@@ -439,12 +367,10 @@ export const fetchAdminContext = async (parsed, inheritedStatus = null) => {
     };
   }
 
-  const effectiveStatus = parsed.statusFilter || inheritedStatus || "approved";
   const handler = handlers[intent];
+  if (!handler) return { intent: "unknown", data: null };
 
-  if (!handler) {
-    return { intent: "unknown", data: null };
-  }
+  const effectiveStatus = statusFilter || inheritedStatus || "approved";
 
   try {
     return await handler(parsed, effectiveStatus);

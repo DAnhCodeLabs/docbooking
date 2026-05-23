@@ -24,25 +24,6 @@ RÀNG BUỘC KỸ THUẬT:
 3. KHÔNG có text thừa ngoài JSON.
 `;
 
-// Helper: format số lẻ với locale vi-VN
-const formatNumber = (num) => num?.toLocaleString("vi-VN") ?? "0";
-const formatCurrency = (num) => `${formatNumber(num)} VNĐ`;
-
-// Helper: format một doctor object (giữ nguyên output cũ)
-const formatDoctor = (doc, idx) => {
-  const fee = doc.consultationFee
-    ? formatCurrency(doc.consultationFee)
-    : "Chưa cập nhật";
-  const exp = doc.experience ? `${doc.experience} năm` : "Chưa rõ";
-  const clinic = doc.clinicName
-    ? `🏥 **${doc.clinicName}**`
-    : "🏥 Chưa có thông tin";
-  const address = doc.clinicAddress ? ` – ${doc.clinicAddress}` : "";
-  const rating = doc.totalReviews ? `⭐ ${doc.totalReviews} đánh giá` : "";
-  return `${idx + 1}. **Bác sĩ ${doc.fullName}**\n   - 🩺 Kinh nghiệm: ${exp}\n   - 💰 Phí khám: ${fee}\n   - ${clinic}${address}\n   - ${rating}`;
-};
-
-// Map cho nhãn thời gian (dùng trong các builder thống kê)
 const TIME_LABEL_MAP = {
   today: "HÔM NAY",
   yesterday: "HÔM QUA",
@@ -55,368 +36,263 @@ const TIME_LABEL_MAP = {
 };
 
 // ===============================
-// 2. INTENT BUILDERS (giữ nguyên output text)
+// 2. HELPERS (EXTREME DRY)
+// ===============================
+
+const formatNumber = (num) => num?.toLocaleString("vi-VN") ?? "0";
+const formatCurrency = (num) => `${formatNumber(num)} VNĐ`;
+const getSuggestions = (s) =>
+  s?.length ? s.map((item) => `- ${item}`).join("\n") : "- Không có gợi ý";
+const stateStr = (statusFilter, count) =>
+  JSON.stringify({ statusFilter, count });
+const result = (data, task, state) => ({ data, task, state });
+
+const formatDoctor = (doc, idx) =>
+  `${idx + 1}. **Bác sĩ ${doc.fullName}**\n   - 🩺 Kinh nghiệm: ${doc.experience ? `${doc.experience} năm` : "Chưa rõ"}\n   - 💰 Phí khám: ${doc.consultationFee ? formatCurrency(doc.consultationFee) : "Chưa cập nhật"}\n   - ${doc.clinicName ? `🏥 **${doc.clinicName}**` : "🏥 Chưa có thông tin"}${doc.clinicAddress ? ` – ${doc.clinicAddress}` : ""}\n   - ${doc.totalReviews ? `⭐ ${doc.totalReviews} đánh giá` : ""}`;
+
+const formatApptStats = (s) =>
+  `- Tổng số lịch hẹn: **${formatNumber(s.total)}**\n- ✅ Đã thanh toán: **${formatNumber(s.paid)}**\n- ⏳ Chưa thanh toán/thất bại: **${formatNumber(s.unpaidFailed)}**\n- 🏥 Đã hoàn thành khám: **${formatNumber(s.completed)}**\n- 📅 Đã xác nhận: **${formatNumber(s.confirmed)}**\n- 🔄 Đã check-in: **${formatNumber(s.checkedIn)}**\n- 💳 Chờ thanh toán: **${formatNumber(s.pendingPayment)}**\n- ❌ Đã hủy: **${formatNumber(s.cancelled)}**`;
+
+// ===============================
+// 3. INTENT BUILDERS
 // ===============================
 
 const intentBuilders = {
-  // ----- Bác sĩ theo chuyên khoa -----
   list_doctors_by_specialty: (ctx) => {
-    if (ctx.error === "SPECIALTY_NOT_FOUND") {
-      const suggestions =
-        ctx.suggestions?.map((s) => `- ${s}`).join("\n") || "- Không có gợi ý";
-      return {
-        data: `⚠️ KHÔNG TÌM THẤY CHUYÊN KHOA: "${ctx.querySpecialty}"\nGỢI Ý KHÁC:\n${suggestions}`,
-        task: `Thông báo không tìm thấy chuyên khoa, liệt kê gợi ý. KHÔNG hỏi mở rộng về bệnh viện.`,
-        state: `admin_specialty_not_found_${ctx.querySpecialty}`,
-      };
-    }
-    if (!ctx.doctors?.length) {
-      const statusText =
-        ctx.statusFilter === "pending" ? "chưa duyệt" : "đã duyệt";
-      const stateSummary = JSON.stringify({
-        statusFilter: ctx.statusFilter,
-        count: 0,
-      });
-      return {
-        data: `📋 CHUYÊN KHOA: ${ctx.specialty?.name || "unknown"}\n- Bác sĩ ${statusText}: **0**`,
-        task: `Thông báo chưa có bác sĩ hoạt động. Gợi ý xem bác sĩ ${ctx.statusFilter === "pending" ? "đã duyệt" : "chưa duyệt"}.`,
-        state: stateSummary,
-      };
-    }
-    const statusText =
-      ctx.statusFilter === "pending" ? "CHƯA DUYỆT" : "ĐÃ DUYỆT";
-    const stateSummary = JSON.stringify({
-      statusFilter: ctx.statusFilter,
-      count: ctx.doctors.length,
-    });
-    return {
-      data: `📋 DANH SÁCH BÁC SĨ ${statusText} CHUYÊN KHOA: **${ctx.specialty.name}**\nTổng: **${ctx.doctors.length}**\n\n${ctx.doctors.map(formatDoctor).join("\n\n")}`,
-      task: `Trình bày danh sách markdown. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bác sĩ nào không ạ?"`,
-      state: stateSummary,
-    };
+    if (ctx.error === "SPECIALTY_NOT_FOUND")
+      return result(
+        `⚠️ KHÔNG TÌM THẤY CHUYÊN KHOA: "${ctx.querySpecialty}"\nGỢI Ý KHÁC:\n${getSuggestions(ctx.suggestions)}`,
+        `Thông báo không tìm thấy chuyên khoa, liệt kê gợi ý. KHÔNG hỏi mở rộng về bệnh viện.`,
+        `admin_specialty_not_found_${ctx.querySpecialty}`,
+      );
+    const lbl = ctx.statusFilter === "pending" ? "CHƯA DUYỆT" : "ĐÃ DUYỆT";
+    const state = stateStr(ctx.statusFilter, ctx.doctors?.length || 0);
+    if (!ctx.doctors?.length)
+      return result(
+        `📋 CHUYÊN KHOA: ${ctx.specialty?.name || "unknown"}\n- Bác sĩ ${lbl.toLowerCase()}: **0**`,
+        `Thông báo chưa có bác sĩ hoạt động. Gợi ý xem bác sĩ ${ctx.statusFilter === "pending" ? "đã duyệt" : "chưa duyệt"}.`,
+        state,
+      );
+    return result(
+      `📋 DANH SÁCH BÁC SĨ ${lbl} CHUYÊN KHOA: **${ctx.specialty.name}**\nTổng: **${ctx.doctors.length}**\n\n${ctx.doctors.map(formatDoctor).join("\n\n")}`,
+      `Trình bày danh sách markdown. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bác sĩ nào không ạ?"`,
+      state,
+    );
   },
 
-  // ----- Đếm bác sĩ theo trạng thái -----
   count_doctors_by_approval_status: (ctx) => {
-    if (ctx.error === "DB_QUERY_FAILED") {
-      return {
-        data: `❌ LỖI HỆ THỐNG DB.`,
-        task: `Thông báo lỗi tạm thời.`,
-        state: "admin_db_error",
-      };
-    }
-    if (typeof ctx.count === "number") {
-      const type = ctx.statusLabel === "đã duyệt" ? "Đã duyệt" : "Chưa duyệt";
-      const statusKey = ctx.statusLabel === "đã duyệt" ? "approved" : "pending";
-      const stateSummary = JSON.stringify({
-        statusFilter: statusKey,
-        count: ctx.count,
-      });
-      return {
-        data: `📊 THỐNG KÊ:\n- Trạng thái: ${type.toUpperCase()}\n- Số lượng: **${ctx.count}**`,
-        task: `Trình bày kết quả rõ ràng. Bắt buộc thêm: "💡 Anh/chị có muốn tìm bác sĩ theo chuyên khoa/bệnh viện không ạ?"`,
-        state: stateSummary,
-      };
-    }
-    return {
-      data: `⚠️ TRẠNG THÁI KHÔNG XÁC ĐỊNH.`,
-      task: `Hướng dẫn lại cú pháp.`,
-      state: "admin_invalid_status",
-    };
+    if (typeof ctx.count !== "number")
+      return result(
+        `⚠️ TRẠNG THÁI KHÔNG XÁC ĐỊNH.`,
+        `Hướng dẫn lại cú pháp.`,
+        "admin_invalid_status",
+      );
+    return result(
+      `📊 THỐNG KÊ:\n- Trạng thái: ${ctx.statusLabel === "đã duyệt" ? "ĐÃ DUYỆT" : "CHƯA DUYỆT"}\n- Số lượng: **${ctx.count}**`,
+      `Trình bày kết quả rõ ràng. Bắt buộc thêm: "💡 Anh/chị có muốn tìm bác sĩ theo chuyên khoa/bệnh viện không ạ?"`,
+      stateStr(ctx.statusFilter, ctx.count),
+    );
   },
 
-  // ----- Bác sĩ theo phòng khám -----
   list_doctors_by_clinic: (ctx) => {
-    if (ctx.error === "CLINIC_NOT_FOUND") {
-      const suggestions =
-        ctx.suggestions?.map((s) => `- ${s}`).join("\n") || "- Không có gợi ý";
-      return {
-        data: `⚠️ KHÔNG TÌM THẤY BỆNH VIỆN/PHÒNG KHÁM: "${ctx.queryClinic}"\nGỢI Ý KHÁC:\n${suggestions}`,
-        task: `Thông báo không tìm thấy cơ sở, liệt kê gợi ý. KHÔNG tự ý thay thế.`,
-        state: `admin_clinic_not_found_${ctx.queryClinic}`,
-      };
-    }
-    if (!ctx.doctors?.length) {
-      const statusText =
-        ctx.statusFilter === "pending" ? "chưa duyệt" : "đã duyệt";
-      const stateSummary = JSON.stringify({
-        statusFilter: ctx.statusFilter,
-        count: 0,
-      });
-      return {
-        data: `🏥 CƠ SỞ: **${ctx.clinic.name}**\n- Bác sĩ ${statusText}: **0**`,
-        task: `Thông báo chưa có bác sĩ ${statusText}. Gợi ý: "Anh/chị có muốn xem danh sách bác sĩ ${ctx.statusFilter === "pending" ? "đã duyệt" : "chưa duyệt"} của bệnh viện này không?"`,
-        state: stateSummary,
-      };
-    }
-    const statusText =
-      ctx.statusFilter === "pending" ? "CHƯA DUYỆT" : "ĐÃ DUYỆT";
-    const stateSummary = JSON.stringify({
-      statusFilter: ctx.statusFilter,
-      count: ctx.doctors.length,
-    });
-    return {
-      data: `📋 DANH SÁCH BÁC SĨ **${statusText}** – BỆNH VIỆN: **${ctx.clinic.name}**\nTổng: **${ctx.doctors.length}**\n\n${ctx.doctors.map(formatDoctor).join("\n\n")}`,
-      task: `Trình bày danh sách markdown. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bác sĩ nào hoặc lọc theo chuyên khoa không ạ?"`,
-      state: stateSummary,
-    };
+    if (ctx.error === "CLINIC_NOT_FOUND")
+      return result(
+        `⚠️ KHÔNG TÌM THẤY BỆNH VIỆN/PHÒNG KHÁM: "${ctx.queryClinic}"\nGỢI Ý KHÁC:\n${getSuggestions(ctx.suggestions)}`,
+        `Thông báo không tìm thấy cơ sở, liệt kê gợi ý. KHÔNG tự ý thay thế.`,
+        `admin_clinic_not_found_${ctx.queryClinic}`,
+      );
+    const lbl = ctx.statusFilter === "pending" ? "CHƯA DUYỆT" : "ĐÃ DUYỆT";
+    const state = stateStr(ctx.statusFilter, ctx.doctors?.length || 0);
+    if (!ctx.doctors?.length)
+      return result(
+        `🏥 CƠ SỞ: **${ctx.clinic.name}**\n- Bác sĩ ${lbl.toLowerCase()}: **0**`,
+        `Thông báo chưa có bác sĩ ${lbl.toLowerCase()}. Gợi ý: "Anh/chị có muốn xem danh sách bác sĩ ${ctx.statusFilter === "pending" ? "đã duyệt" : "chưa duyệt"} của bệnh viện này không?"`,
+        state,
+      );
+    return result(
+      `📋 DANH SÁCH BÁC SĨ **${lbl}** – BỆNH VIỆN: **${ctx.clinic.name}**\nTổng: **${ctx.doctors.length}**\n\n${ctx.doctors.map(formatDoctor).join("\n\n")}`,
+      `Trình bày danh sách markdown. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bác sĩ nào hoặc lọc theo chuyên khoa không ạ?"`,
+      state,
+    );
   },
 
-  // ----- Danh sách phòng khám theo trạng thái -----
   list_clinics_by_approval_status: (ctx) => {
-    if (ctx.error === "MISSING_STATUS") {
-      return {
-        data: `⚠️ THIẾU THÔNG TIN TRẠNG THÁI.`,
-        task: `Yêu cầu admin nói rõ "chưa duyệt", "đã duyệt" hoặc "bị từ chối".`,
-        state: "admin_missing_status",
-      };
-    }
-    if (ctx.error === "DB_QUERY_FAILED") {
-      return {
-        data: `❌ LỖI HỆ THỐNG DB.`,
-        task: `Thông báo lỗi tạm thời.`,
-        state: "admin_db_error",
-      };
-    }
+    if (ctx.error === "MISSING_STATUS")
+      return result(
+        `⚠️ THIẾU THÔNG TIN TRẠNG THÁI.`,
+        `Yêu cầu admin nói rõ "chưa duyệt", "đã duyệt" hoặc "bị từ chối".`,
+        "admin_missing_status",
+      );
     const count = ctx.count || 0;
-    const label =
-      ctx.statusLabel === "chưa duyệt"
-        ? "CHƯA DUYỆT"
-        : ctx.statusLabel === "đã duyệt"
-          ? "ĐÃ DUYỆT"
-          : ctx.statusLabel === "bị từ chối"
-            ? "BỊ TỪ CHỐI"
-            : (ctx.statusLabel || "KHÔNG XÁC ĐỊNH").toUpperCase();
-    if (count === 0) {
-      return {
-        data: `🏥 DANH SÁCH BỆNH VIỆN ${label}: **0**`,
-        task: `Thông báo chưa có cơ sở nào. Gợi ý: "Anh/chị có muốn xem danh sách ${ctx.statusLabel === "chưa duyệt" ? "đã duyệt" : "chưa duyệt"} không?"`,
-        state: `no_clinics_${ctx.statusLabel}_0`,
-      };
-    }
-    const clinicList = ctx.clinics.map((c) => `- ${c.name}`).join("\n");
-    return {
-      data: `📋 DANH SÁCH BỆNH VIỆN ${label} (Tổng: **${count}**)\n\n${clinicList}`,
-      task: `Trình bày danh sách markdown với bullet points, CHỈ HIỂN THỊ TÊN. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bệnh viện nào không ạ?"`,
-      state: `list_clinics_${ctx.statusLabel}_${count}`,
-    };
-  },
-
-  // ----- Chi tiết phòng khám -----
-  get_clinic_details: (ctx) => {
-    if (ctx.error === "MISSING_CLINIC_NAME") {
-      return {
-        data: `⚠️ THIẾU TÊN BỆNH VIỆN.`,
-        task: `Yêu cầu admin cung cấp tên bệnh viện cụ thể.`,
-        state: "admin_missing_clinic_name",
-      };
-    }
-    if (ctx.error === "DB_QUERY_FAILED") {
-      return {
-        data: `❌ LỖI HỆ THỐNG DB.`,
-        task: `Thông báo lỗi tạm thời.`,
-        state: "admin_db_error",
-      };
-    }
-    if (ctx.error === "CLINIC_NOT_FOUND") {
-      const suggestions =
-        ctx.suggestions?.map((s) => `- ${s}`).join("\n") || "- Không có gợi ý";
-      return {
-        data: `⚠️ KHÔNG TÌM THẤY BỆNH VIỆN/PHÒNG KHÁM: "${ctx.queryClinic}"\nGỢI Ý KHÁC:\n${suggestions}`,
-        task: `Thông báo không tìm thấy, liệt kê gợi ý. Hỏi: "Anh/chị có muốn xem danh sách bệnh viện đã duyệt hoặc chưa duyệt không ạ?"`,
-        state: `admin_clinic_not_found_${ctx.queryClinic}`,
-      };
-    }
-    const clinic = ctx.clinic;
-    if (!clinic) {
-      return {
-        data: `⚠️ KHÔNG CÓ DỮ LIỆU.`,
-        task: `Thông báo lỗi không xác định.`,
-        state: "admin_no_clinic_data",
-      };
-    }
-    const specialties =
-      clinic.specialties?.map((s) => s.name).join(", ") || "Chưa cập nhật";
-    const fee = clinic.consultationFee
-      ? formatCurrency(clinic.consultationFee)
-      : "Chưa cập nhật";
-    const statusText =
+    const lbl =
       {
-        pending: "Chờ duyệt",
-        contacted: "Đã liên hệ",
-        resolved: "Đã duyệt",
-        rejected: "Từ chối",
-        locked: "Đã khóa",
-        deleted: "Đã xóa",
-      }[clinic.status] || clinic.status;
-    return {
-      data: `🏥 **THÔNG TIN CHI TIẾT BỆNH VIỆN**\n\n📛 **Tên:** ${clinic.clinicName}\n📍 **Địa chỉ:** ${clinic.address || "Chưa cập nhật"}\n📞 **Điện thoại:** ${clinic.phone || "Chưa cập nhật"}\n📧 **Email:** ${clinic.email || "Chưa cập nhật"}\n👤 **Người đại diện:** ${clinic.representativeName || "Chưa cập nhật"}\n🏢 **Loại hình:** ${clinic.clinicType || "Chưa cập nhật"}\n💰 **Phí khám:** ${fee}\n✅ **Trạng thái:** ${statusText}\n🩺 **Chuyên khoa:** ${specialties}`,
-      task: `Trình bày chi tiết rõ ràng. Sau đó hỏi: "Anh/chị có muốn xem danh sách bác sĩ của bệnh viện này không ạ?"`,
-      state: `clinic_details_${clinic.clinicName.replace(/\s/g, "_")}`,
-    };
+        "chưa duyệt": "CHƯA DUYỆT",
+        "đã duyệt": "ĐÃ DUYỆT",
+        "bị từ chối": "BỊ TỪ CHỐI",
+      }[ctx.statusLabel] || "KHÔNG XÁC ĐỊNH";
+    if (!count)
+      return result(
+        `🏥 DANH SÁCH BỆNH VIỆN ${lbl}: **0**`,
+        `Thông báo chưa có cơ sở nào. Gợi ý: "Anh/chị có muốn xem danh sách ${ctx.statusLabel === "chưa duyệt" ? "đã duyệt" : "chưa duyệt"} không?"`,
+        `no_clinics_${ctx.statusLabel}_0`,
+      );
+    return result(
+      `📋 DANH SÁCH BỆNH VIỆN ${lbl} (Tổng: **${count}**)\n\n${ctx.clinics.map((c) => `- ${c.name}`).join("\n")}`,
+      `Trình bày danh sách markdown với bullet points, CHỈ HIỂN THỊ TÊN. Sau đó hỏi: "Anh/chị có muốn xem chi tiết bệnh viện nào không ạ?"`,
+      `list_clinics_${ctx.statusLabel}_${count}`,
+    );
   },
 
-  // ----- Thống kê tổng lịch hẹn -----
+  get_clinic_details: (ctx) => {
+    if (ctx.error === "MISSING_CLINIC_NAME")
+      return result(
+        `⚠️ THIẾU TÊN BỆNH VIỆN.`,
+        `Yêu cầu admin cung cấp tên bệnh viện cụ thể.`,
+        "admin_missing_clinic_name",
+      );
+    if (ctx.error === "CLINIC_NOT_FOUND")
+      return result(
+        `⚠️ KHÔNG TÌM THẤY BỆNH VIỆN/PHÒNG KHÁM: "${ctx.queryClinic}"\nGỢI Ý KHÁC:\n${getSuggestions(ctx.suggestions)}`,
+        `Thông báo không tìm thấy, liệt kê gợi ý. Hỏi: "Anh/chị có muốn xem danh sách bệnh viện đã duyệt hoặc chưa duyệt không ạ?"`,
+        `admin_clinic_not_found_${ctx.queryClinic}`,
+      );
+    if (!ctx.clinic)
+      return result(
+        `⚠️ KHÔNG CÓ DỮ LIỆU.`,
+        `Thông báo lỗi không xác định.`,
+        "admin_no_clinic_data",
+      );
+    const c = ctx.clinic;
+    const statusMap = {
+      pending: "Chờ duyệt",
+      contacted: "Đã liên hệ",
+      resolved: "Đã duyệt",
+      rejected: "Từ chối",
+      locked: "Đã khóa",
+      deleted: "Đã xóa",
+    };
+    return result(
+      `🏥 **THÔNG TIN CHI TIẾT BỆNH VIỆN**\n\n📛 **Tên:** ${c.clinicName}\n📍 **Địa chỉ:** ${c.address || "Chưa cập nhật"}\n📞 **Điện thoại:** ${c.phone || "Chưa cập nhật"}\n📧 **Email:** ${c.email || "Chưa cập nhật"}\n👤 **Người đại diện:** ${c.representativeName || "Chưa cập nhật"}\n🏢 **Loại hình:** ${c.clinicType || "Chưa cập nhật"}\n✅ **Trạng thái:** ${statusMap[c.status] || c.status}`,
+      `Trình bày chi tiết rõ ràng. Sau đó hỏi: "Anh/chị có muốn xem danh sách bác sĩ của bệnh viện này không ạ?"`,
+      `clinic_details_${c.clinicName.replace(/\s/g, "_")}`,
+    );
+  },
+
   total_appointment_stats: (ctx) => {
-    if (ctx.error === "DB_QUERY_FAILED") {
-      return {
-        data: `❌ LỖI HỆ THỐNG DB.`,
-        task: `Thông báo lỗi tạm thời.`,
-        state: "admin_db_error",
-      };
-    }
-    const stats = ctx.stats;
-    if (!stats || stats.total === undefined) {
-      return {
-        data: `⚠️ KHÔNG CÓ DỮ LIỆU LỊCH HẸN.`,
-        task: `Thông báo chưa có lịch hẹn nào trên hệ thống.`,
-        state: "admin_no_appointments",
-      };
-    }
-    return {
-      data: `📊 **THỐNG KÊ LỊCH HẸN TOÀN HỆ THỐNG**\n\n- Tổng số lịch hẹn: **${formatNumber(stats.total)}**\n- ✅ Đã thanh toán: **${formatNumber(stats.paid)}**\n- ⏳ Chưa thanh toán/thất bại: **${formatNumber(stats.unpaidFailed)}**\n- 🏥 Đã hoàn thành khám: **${formatNumber(stats.completed)}**\n- 📅 Đã xác nhận: **${formatNumber(stats.confirmed)}**\n- 🔄 Đã check-in: **${formatNumber(stats.checkedIn)}**\n- 💳 Chờ thanh toán: **${formatNumber(stats.pendingPayment)}**\n- ❌ Đã hủy: **${formatNumber(stats.cancelled)}**`,
-      task: `Trình bày thống kê rõ ràng. Sau đó hỏi: "Anh/chị có muốn xem chi tiết theo từng trạng thái hoặc lọc theo bác sĩ/phòng khám không ạ?"`,
-      state: `total_appointments_${stats.total}`,
-    };
+    if (ctx.stats?.total === undefined)
+      return result(
+        `⚠️ KHÔNG CÓ DỮ LIỆU LỊCH HẸN.`,
+        `Thông báo chưa có lịch hẹn nào trên hệ thống.`,
+        "admin_no_appointments",
+      );
+    return result(
+      `📊 **THỐNG KÊ LỊCH HẸN TOÀN HỆ THỐNG**\n\n${formatApptStats(ctx.stats)}`,
+      `Trình bày thống kê rõ ràng. Sau đó hỏi: "Anh/chị có muốn xem chi tiết theo từng trạng thái hoặc lọc theo bác sĩ/phòng khám không ạ?"`,
+      `total_appointments_${ctx.stats.total}`,
+    );
   },
 
-  // ----- Thống kê lịch hẹn theo thời gian -----
   appointment_stats_by_time: (ctx) => {
-    if (ctx.error === "DB_QUERY_FAILED") {
-      return {
-        data: `❌ LỖI HỆ THỐNG DB.`,
-        task: `Thông báo lỗi tạm thời.`,
-        state: "admin_db_error",
-      };
-    }
-    if (ctx.error === "INVALID_TIME_RANGE") {
-      return {
-        data: `⚠️ KHOẢNG THỜI GIAN KHÔNG HỢP LỆ.`,
-        task: `Thông báo và yêu cầu admin chọn lại (hôm nay, hôm qua, tuần này, ...).`,
-        state: "admin_invalid_time_range",
-      };
-    }
-    const stats = ctx.stats;
-    if (!stats || stats.total === undefined) {
-      return {
-        data: `⚠️ KHÔNG CÓ LỊCH HẸN TRONG KHOẢNG THỜI GIAN NÀY.`,
-        task: `Thông báo không có dữ liệu.`,
-        state: "admin_no_appointments_in_range",
-      };
-    }
-    const label = TIME_LABEL_MAP[ctx.timeRange] || ctx.timeRange;
-    return {
-      data: `📊 **THỐNG KÊ LỊCH HẸN – ${label}**\n\n- Tổng số lịch hẹn: **${formatNumber(stats.total)}**\n- ✅ Đã thanh toán: **${formatNumber(stats.paid)}**\n- ⏳ Chưa thanh toán/thất bại: **${formatNumber(stats.unpaidFailed)}**\n- 🏥 Đã hoàn thành khám: **${formatNumber(stats.completed)}**\n- 📅 Đã xác nhận: **${formatNumber(stats.confirmed)}**\n- 🔄 Đã check-in: **${formatNumber(stats.checkedIn)}**\n- 💳 Chờ thanh toán: **${formatNumber(stats.pendingPayment)}**\n- ❌ Đã hủy: **${formatNumber(stats.cancelled)}**`,
-      task: `Trình bày thống kê rõ ràng. Sau đó hỏi: "Anh/chị có muốn xem chi tiết hơn theo bác sĩ hoặc phòng khám không ạ?"`,
-      state: `appointment_stats_${ctx.timeRange}_${stats.total}`,
-    };
+    if (ctx.error === "INVALID_TIME_RANGE")
+      return result(
+        `⚠️ KHOẢNG THỜI GIAN KHÔNG HỢP LỆ.`,
+        `Thông báo và yêu cầu admin chọn lại (hôm nay, hôm qua, tuần này, ...).`,
+        "admin_invalid_time_range",
+      );
+    if (ctx.stats?.total === undefined)
+      return result(
+        `⚠️ KHÔNG CÓ LỊCH HẸN TRONG KHOẢNG THỜI GIAN NÀY.`,
+        `Thông báo không có dữ liệu.`,
+        "admin_no_appointments_in_range",
+      );
+    return result(
+      `📊 **THỐNG KÊ LỊCH HẸN – ${TIME_LABEL_MAP[ctx.timeRange] || ctx.timeRange}**\n\n${formatApptStats(ctx.stats)}`,
+      `Trình bày thống kê rõ ràng. Sau đó hỏi: "Anh/chị có muốn xem chi tiết hơn theo bác sĩ hoặc phòng khám không ạ?"`,
+      `appointment_stats_${ctx.timeRange}_${ctx.stats.total}`,
+    );
   },
 
-  // ----- Thống kê tổng doanh thu (có phân chia lợi nhuận) -----
   total_revenue_stats: (ctx) => {
-    if (ctx.error === "DB_QUERY_FAILED") {
-      return {
-        data: `❌ LỖI HỆ THỐNG DB.`,
-        task: `Thông báo lỗi tạm thời.`,
-        state: "admin_db_error",
-      };
-    }
-    const stats = ctx.stats;
-    if (!stats || stats.totalRevenue === undefined) {
-      return {
-        data: `⚠️ KHÔNG CÓ DỮ LIỆU DOANH THU.`,
-        task: `Thông báo chưa có giao dịch nào.`,
-        state: "admin_no_revenue",
-      };
-    }
-    const data = `
-📊 **THỐNG KÊ DOANH THU & LỢI NHUẬN TOÀN HỆ THỐNG**
-
-💰 Tổng doanh thu từ bệnh nhân: **${formatCurrency(stats.totalRevenue)}**
-🧾 Tổng số giao dịch: **${formatNumber(stats.totalTransactions)}**
-📊 Trung bình/giao dịch: **${formatCurrency(stats.averageRevenue)}**
-
-📌 **Phân chia lợi nhuận (từ các ca hoàn thành):**
-- 🏢 **Hệ thống nhận:** ${formatCurrency(stats.totalPlatformRevenue)}
-- 🏥 **Bệnh viện/Phòng khám nhận:** ${formatCurrency(stats.totalClinicRevenue)}
-
-💳 **Theo phương thức thanh toán:**
-- Online: ${formatCurrency(stats.onlineRevenue)} (${stats.onlineCount} GD)
-- Offline: ${formatCurrency(stats.offlineRevenue)} (${stats.offlineCount} GD)
-    `.trim();
-    return {
-      data,
-      task: `Trình bày số liệu rõ ràng. Hỏi thêm: "Anh/chị có muốn xem chi tiết theo từng phương thức thanh toán hoặc lọc theo thời gian không ạ?"`,
-      state: `total_revenue_${stats.totalRevenue}`,
-    };
+    if (ctx.stats?.totalRevenue === undefined)
+      return result(
+        `⚠️ KHÔNG CÓ DỮ LIỆU DOANH THU.`,
+        `Thông báo chưa có giao dịch nào.`,
+        "admin_no_revenue",
+      );
+    const s = ctx.stats;
+    return result(
+      `📊 **THỐNG KÊ DOANH THU & LỢI NHUẬN TOÀN HỆ THỐNG**\n\n💰 Tổng doanh thu từ bệnh nhân: **${formatCurrency(s.totalRevenue)}**\n🧾 Tổng số giao dịch: **${formatNumber(s.totalTransactions)}**\n📊 Trung bình/giao dịch: **${formatCurrency(s.averageRevenue)}**\n\n📌 **Phân chia lợi nhuận (từ các ca hoàn thành):**\n- 🏢 **Hệ thống nhận:** ${formatCurrency(s.totalPlatformRevenue)}\n- 🏥 **Bệnh viện/Phòng khám nhận:** ${formatCurrency(s.totalClinicRevenue)}\n\n💳 **Theo phương thức thanh toán:**\n- Online: ${formatCurrency(s.onlineRevenue)} (${s.onlineCount} GD)\n- Offline: ${formatCurrency(s.offlineRevenue)} (${s.offlineCount} GD)`,
+      `Trình bày số liệu rõ ràng. Hỏi thêm: "Anh/chị có muốn xem chi tiết theo từng phương thức thanh toán hoặc lọc theo thời gian không ạ?"`,
+      `total_revenue_${s.totalRevenue}`,
+    );
   },
 
-  // ----- Thống kê doanh thu theo thời gian (có breakdown) -----
   revenue_stats_by_time: (ctx) => {
-    if (ctx.error === "DB_QUERY_FAILED") {
-      return {
-        data: `❌ LỖI HỆ THỐNG DB.`,
-        task: `Thông báo lỗi tạm thời.`,
-        state: "admin_db_error",
-      };
+    if (ctx.error === "INVALID_TIME_RANGE")
+      return result(
+        `⚠️ KHOẢNG THỜI GIAN KHÔNG HỢP LỆ.`,
+        `Thông báo và yêu cầu admin chọn lại (hôm nay, hôm qua, tuần này, ...).`,
+        "admin_invalid_time_range",
+      );
+    if (ctx.stats?.totalRevenue === undefined)
+      return result(
+        `⚠️ KHÔNG CÓ DỮ LIỆU DOANH THU TRONG KHOẢNG ${(ctx.timeRange || "NÀY").toUpperCase()}.`,
+        `Thông báo chưa có giao dịch nào.`,
+        `no_revenue_${ctx.timeRange || "unknown"}`,
+      );
+    const s = ctx.stats;
+    return result(
+      `📊 **THỐNG KÊ DOANH THU - ${TIME_LABEL_MAP[ctx.timeRange] || ctx.timeRange?.toUpperCase() || "KHOẢNG THỜI GIAN"}**\n\n💰 Tổng doanh thu: **${formatCurrency(s.totalRevenue)}**\n🧾 Số giao dịch: **${formatNumber(s.totalTransactions)}**\n📊 Trung bình/giao dịch: **${formatCurrency(s.averageRevenue)}**\n\n💳 **Phân loại thanh toán:**\n- Online: ${formatCurrency(s.onlineRevenue)} (${s.onlineCount} GD)\n- Offline: ${formatCurrency(s.offlineRevenue)} (${s.offlineCount} GD)`,
+      `Trình bày số liệu rõ ràng. Hỏi thêm: "Anh/chị có muốn so sánh với kỳ trước hoặc xem biểu đồ không ạ?"`,
+      `revenue_${ctx.timeRange}_${s.totalRevenue}`,
+    );
+  },
+  
+  top_doctors_completed_appointments: (ctx) => {
+    if (!ctx.topDoctors || ctx.topDoctors.length === 0) {
+      return result(
+        `⚠️ KHÔNG CÓ DỮ LIỆU. Hiện tại hệ thống chưa có bác sĩ nào có lịch hẹn đã hoàn thành.`,
+        `Thông báo chưa có dữ liệu ca khám hoàn thành. KHÔNG BỊA ĐẶT SỐ LIỆU.`,
+        `admin_no_top_doctors`,
+      );
     }
-    if (ctx.error === "INVALID_TIME_RANGE") {
-      return {
-        data: `⚠️ KHOẢNG THỜI GIAN KHÔNG HỢP LỆ.`,
-        task: `Thông báo và yêu cầu admin chọn lại (hôm nay, hôm qua, tuần này, ...).`,
-        state: "admin_invalid_time_range",
-      };
-    }
-    const stats = ctx.stats;
-    if (!stats || stats.totalRevenue === undefined) {
-      const timeLabel = ctx.timeRange ? ctx.timeRange.toUpperCase() : "NÀY";
-      return {
-        data: `⚠️ KHÔNG CÓ DỮ LIỆU DOANH THU TRONG KHOẢNG ${timeLabel}.`,
-        task: `Thông báo chưa có giao dịch nào.`,
-        state: `no_revenue_${ctx.timeRange || "unknown"}`,
-      };
-    }
-    const label =
-      TIME_LABEL_MAP[ctx.timeRange] ||
-      ctx.timeRange?.toUpperCase() ||
-      "KHOẢNG THỜI GIAN";
-    const data = `
-📊 **THỐNG KÊ DOANH THU - ${label}**
 
-💰 Tổng doanh thu: **${formatCurrency(stats.totalRevenue)}**
-🧾 Số giao dịch: **${formatNumber(stats.totalTransactions)}**
-📊 Trung bình/giao dịch: **${formatCurrency(stats.averageRevenue)}**
-
-💳 **Phân loại thanh toán:**
-- Online: ${formatCurrency(stats.onlineRevenue)} (${stats.onlineCount} GD)
-- Offline: ${formatCurrency(stats.offlineRevenue)} (${stats.offlineCount} GD)
-    `.trim();
-    return {
-      data,
-      task: `Trình bày số liệu rõ ràng. Hỏi thêm: "Anh/chị có muốn so sánh với kỳ trước hoặc xem biểu đồ không ạ?"`,
-      state: `revenue_${ctx.timeRange}_${stats.totalRevenue}`,
-    };
+    const listStr = ctx.topDoctors
+      .map(
+        (d, i) => `${i + 1}. **BS. ${d.doctorName}**: ${d.completedCount} ca`,
+      )
+      .join("\n");
+    return result(
+      `🏆 **TOP 5 BÁC SĨ CÓ NHIỀU LỊCH HẸN HOÀN THÀNH NHẤT**\n\n${listStr}`,
+      `Thông báo em xin gửi biểu đồ Top 5 bác sĩ, và liệt kê lại danh sách bằng bullet points.`,
+      `top_doctors_completed_${ctx.topDoctors.length}`,
+    );
   },
 };
 
 // ===============================
-// 3. MAIN EXPORT FUNCTION
+// 4. MAIN EXPORT FUNCTION
 // ===============================
 
 export const buildAdminPrompt = (context) => {
-  let { data = "", task = "", state = "admin_general" } = {};
-
+  // 1. Chặn ưu tiên: Yêu cầu làm rõ (Clarification)
   if (context.requiresClarification && context.clarificationMessage) {
-    data = `⚠️ YÊU CẦU LÀM RÕ: ${context.clarificationMessage}`;
-    task = `Lặp lại thông báo làm rõ lịch sử. Không trả lời ngoài phạm vi.`;
-    state = "admin_clarification_required";
-  } else if (intentBuilders[context.intent]) {
-    ({ data, task, state } = intentBuilders[context.intent](context));
-  } else {
-    data = `❓ CHƯA HỖ TRỢ.`;
-    task = `Thông báo tính năng đang phát triển. Gợi ý tính năng đếm bác sĩ/liệt kê theo chuyên khoa hoặc bệnh viện.`;
-    state = "admin_unsupported_intent";
+    return `${BASE_PERSONA}\n\n=== DỮ LIỆU THỰC TẾ ===\n⚠️ YÊU CẦU LÀM RÕ: ${context.clarificationMessage}\n\n=== CHỈ THỊ ===\nLặp lại thông báo làm rõ lịch sử. Không trả lời ngoài phạm vi.\n\n${JSON_INSTRUCTION}`;
   }
 
-  return `${BASE_PERSONA}\n\n=== DỮ LIỆU THỰC TẾ ===\n${data}\n\n=== CHỈ THỊ ===\n${task}\n\n${JSON_INSTRUCTION}`;
+  // 2. Chặn lỗi DB toàn cục (Global Exception Interceptor)
+  if (context.error === "DB_QUERY_FAILED") {
+    return `${BASE_PERSONA}\n\n=== DỮ LIỆU THỰC TẾ ===\n❌ LỖI HỆ THỐNG DB.\n\n=== CHỈ THỊ ===\nThông báo lỗi tạm thời.\n\n${JSON_INSTRUCTION}`;
+  }
+
+  // 3. Xử lý logic chuẩn hóa Intent
+  const payload = intentBuilders[context.intent]
+    ? intentBuilders[context.intent](context)
+    : {
+        data: "❓ CHƯA HỖ TRỢ.",
+        task: "Thông báo tính năng đang phát triển. Gợi ý tính năng đếm bác sĩ/liệt kê theo chuyên khoa hoặc bệnh viện.",
+        state: "admin_unsupported_intent",
+      };
+
+  return `${BASE_PERSONA}\n\n=== DỮ LIỆU THỰC TẾ ===\n${payload.data}\n\n=== CHỈ THỊ ===\n${payload.task}\n\n${JSON_INSTRUCTION}`;
 };

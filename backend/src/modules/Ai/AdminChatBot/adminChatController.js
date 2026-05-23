@@ -12,7 +12,6 @@ import { buildAdminPrompt } from "./adminPromptBuilder.js";
 // ===============================
 // 1. CONSTANTS
 // ===============================
-
 const DEFAULT_BAR_COLORS = [
   "#3b82f6",
   "#f59e0b",
@@ -32,66 +31,58 @@ const TIME_TITLE_MAP = {
 };
 
 // ===============================
-// 2. HELPERS (DRY)
+// 2. HELPERS (KISS)
 // ===============================
 
-/**
- * Lấy status filter từ session metadata (text hoặc JSON)
- */
 const getLastStatusFilterFromSession = (session) => {
   if (!session?.messages?.length) return null;
   for (let i = session.messages.length - 1; i >= 0; i--) {
-    const msg = session.messages[i];
-    if (msg.role !== "assistant" || !msg.metadata) continue;
+    const { role, metadata } = session.messages[i];
+    if (role !== "assistant" || !metadata) continue;
     try {
-      const meta = JSON.parse(msg.metadata);
+      const meta = JSON.parse(metadata);
       if (meta.statusFilter) return meta.statusFilter;
     } catch {
-      if (/approved/i.test(msg.metadata)) return "approved";
-      if (/pending/i.test(msg.metadata)) return "pending";
+      if (/approved/i.test(metadata)) return "approved";
+      if (/pending/i.test(metadata)) return "pending";
     }
   }
   return null;
 };
 
-/**
- * Lưu tin nhắn assistant và gửi response JSON (tái sử dụng cho nhiều handler)
- */
-const saveAndRespond = async (session, reply, chartData, res) => {
-  console.log(
-    `[DEBUG][Controller] saveAndRespond: sessionId=${session.sessionId}, reply length=${reply?.length}, hasChart=${!!chartData}`,
-  );
+const saveAndRespond = async (
+  session,
+  reply,
+  chartData,
+  res,
+  extraMeta = {},
+) => {
   session.messages.push({
     role: "assistant",
     content: [{ text: reply || "📊 Biểu đồ" }],
-    metadata: JSON.stringify({ chartData: !!chartData }),
+    metadata: JSON.stringify(
+      chartData ? { chartData: true, ...extraMeta } : extraMeta,
+    ),
   });
   await session.save();
-  console.log(
-    `[DEBUG][Controller] Session saved, messages count=${session.messages.length}`,
-  );
-  return res.status(StatusCodes.OK).json({
-    success: true,
-    data: { sessionId: session.sessionId, reply, chartData },
-  });
+  return res
+    .status(StatusCodes.OK)
+    .json({
+      success: true,
+      data: { sessionId: session.sessionId, reply, chartData },
+    });
 };
 
-/**
- * Format số với locale VN
- */
-const formatNumber = (num) => num?.toLocaleString("vi-VN") ?? "0";
-
 // ===============================
-// 3. CHART BUILDERS (giữ nguyên output)
+// 3. CHART BUILDERS
 // ===============================
 
 const buildAppointmentChart = (stats, timeRange) => {
   if (!stats) return null;
-  const title = `Thống kê lịch hẹn - ${TIME_TITLE_MAP[timeRange] || "toàn hệ thống"}`;
   return {
     bar: {
       type: "bar",
-      title,
+      title: `Thống kê lịch hẹn - ${TIME_TITLE_MAP[timeRange] || "toàn hệ thống"}`,
       data: [
         {
           name: "Hoàn thành",
@@ -141,8 +132,6 @@ const buildAppointmentChart = (stats, timeRange) => {
 
 const buildRevenueChart = (stats, isTotal = false, timeRange = null) => {
   if (!stats || stats.totalRevenue === 0) return null;
-  const displayTime =
-    TIME_TITLE_MAP[timeRange] || timeRange?.toUpperCase() || "";
   const chart = {
     pie: {
       type: "pie",
@@ -154,11 +143,8 @@ const buildRevenueChart = (stats, isTotal = false, timeRange = null) => {
       colors: ["#10b981", "#f59e0b"],
     },
   };
-  if (
-    isTotal &&
-    stats.totalPlatformRevenue !== undefined &&
-    stats.totalClinicRevenue !== undefined
-  ) {
+
+  if (isTotal && stats.totalPlatformRevenue !== undefined) {
     chart.bar = {
       type: "bar",
       title: "Phân chia lợi nhuận",
@@ -177,14 +163,13 @@ const buildRevenueChart = (stats, isTotal = false, timeRange = null) => {
       colors: ["#3b82f6", "#10b981"],
       valueLabel: "Lợi nhuận (VNĐ)",
     };
-  }
-  if (!isTotal && stats.dailyBreakdown?.length) {
+  } else if (!isTotal && stats.dailyBreakdown?.length) {
     chart.bar = {
       type: "bar",
-      title: `Doanh thu theo ngày - ${displayTime}`,
-      data: stats.dailyBreakdown.map((day) => ({
-        name: day.date,
-        value: day.totalRevenue,
+      title: `Doanh thu theo ngày - ${TIME_TITLE_MAP[timeRange] || timeRange?.toUpperCase() || ""}`,
+      data: stats.dailyBreakdown.map((d) => ({
+        name: d.date,
+        value: d.totalRevenue,
         color: "#3b82f6",
       })),
       colors: ["#3b82f6"],
@@ -194,32 +179,21 @@ const buildRevenueChart = (stats, isTotal = false, timeRange = null) => {
   return chart;
 };
 
-/**
- * Xây dựng biểu đồ đường (line chart) cho doanh thu theo ngày
- */
 const buildLineChart = (dailyRevenue, clinicName, month, year) => {
-  if (!dailyRevenue || dailyRevenue.length === 0) return null;
-  const categories = dailyRevenue.map((item) => {
-    const d = item.date.split("-")[2];
-    return `${d}/${month}`;
-  });
-  const seriesData = dailyRevenue.map((item) => item.revenue);
+  if (!dailyRevenue?.length) return null;
   return {
     line: {
       type: "line",
       title: `📈 Doanh thu thực nhận - ${clinicName} - Tháng ${month}/${year}`,
       xAxis: {
         label: "Ngày",
-        categories: categories,
+        categories: dailyRevenue.map((d) => `${d.date.split("-")[2]}/${month}`),
       },
-      yAxis: {
-        label: "Doanh thu (VNĐ)",
-        suffix: " VNĐ",
-      },
+      yAxis: { label: "Doanh thu (VNĐ)", suffix: " VNĐ" },
       series: [
         {
           name: "Doanh thu phòng khám",
-          data: seriesData,
+          data: dailyRevenue.map((d) => d.revenue),
           color: "#3b82f6",
           lineTension: 0.2,
           pointRadius: 3,
@@ -229,86 +203,100 @@ const buildLineChart = (dailyRevenue, clinicName, month, year) => {
   };
 };
 
-// Handler mới cho intent clinic_revenue_by_month
-const handleClinicRevenueByMonth = async (session, context, parsed, res) => {
-  console.log(
-    `[DEBUG][Controller] Handling clinic_revenue_by_month for session ${session.sessionId}`,
-  );
-  const { dailyRevenue, clinic, month, year } = context;
-  console.log(
-    `[DEBUG][Controller] Clinic: ${clinic.name}, month=${month}, year=${year}, dailyRevenue length=${dailyRevenue?.length}`,
-  );
-  if (
-    !dailyRevenue ||
-    dailyRevenue.length === 0 ||
-    dailyRevenue.every((d) => d.revenue === 0)
-  ) {
-    console.log(`[DEBUG][Controller] No revenue data → text response`);
-    const reply = `🏥 **${clinic.name}** chưa có doanh thu nào trong tháng ${month}/${year}.`;
-    await saveAndRespond(session, reply, null, res);
-    return;
-  }
-  const total = dailyRevenue.reduce((sum, d) => sum + d.revenue, 0);
-  console.log(
-    `[DEBUG][Controller] Total revenue in month: ${total} VNĐ. Generating line chart.`,
-  );
-  const chartData = buildLineChart(dailyRevenue, clinic.name, month, year);
-  await saveAndRespond(
-    session,
-    `📊 Biểu đồ doanh thu theo ngày của **${clinic.name}** tháng ${month}/${year}.`,
-    chartData,
-    res,
-  );
-  console.log(
-    `[DEBUG][Controller] Response sent with chartData keys:`,
-    Object.keys(chartData || {}),
-  );
+const buildTopDoctorsLineChart = (topDoctors) => {
+  if (!topDoctors?.length) return null;
+  return {
+    line: {
+      type: "line",
+      title: `📈 Top ${topDoctors.length} Bác sĩ có lịch hẹn hoàn thành nhiều nhất`,
+      xAxis: {
+        label: "Bác sĩ",
+        categories: topDoctors.map((d) => `BS. ${d.doctorName}`), // Trục X là Tên Bác Sĩ
+      },
+      yAxis: { label: "Số lượng ca khám (ca)", suffix: " ca" },
+      series: [
+        {
+          name: "Số ca hoàn thành",
+          data: topDoctors.map((d) => d.completedCount), // Trục Y là số ca
+          color: "#8b5cf6", // Màu tím phân biệt với doanh thu
+          lineTension: 0.3,
+          pointRadius: 4,
+        },
+      ],
+    },
+  };
 };
 
 // ===============================
-// 4. INTENT HANDLERS
+// 4. CORE HANDLERS
 // ===============================
 
-const handleAppointmentStats = async (session, context, parsed, res) => {
-  const chartData = buildAppointmentChart(context.stats, parsed.timeRange);
-  await saveAndRespond(session, "📊 Biểu đồ thống kê lịch hẹn", chartData, res);
-};
-
-const handleRevenueStatsByTime = async (session, context, parsed, res) => {
-  const stats = context.stats;
-  const hasData = stats.totalRevenue > 0;
+const handleCharts = async (session, context, parsed, res) => {
+  const { intent, timeRange } = parsed;
+  const { stats, dailyRevenue, clinic, month, year, topDoctors } = context;
   let reply = "",
     chartData = null;
-  if (hasData) {
-    chartData = buildRevenueChart(stats, false, context.timeRange);
-  } else {
-    reply = `📊 **Thống kê doanh thu - ${context.timeRange?.toUpperCase() || "Khoảng thời gian"}**\n\nKhông có giao dịch nào.`;
-  }
-  await saveAndRespond(session, reply, chartData, res);
-};
 
-const handleTotalRevenueStats = async (session, context, parsed, res) => {
-  const stats = context.stats;
-  const hasData = stats.totalRevenue > 0;
-  let reply = "",
-    chartData = null;
-  if (hasData) {
-    chartData = buildRevenueChart(stats, true);
-  } else {
-    reply =
-      "📊 **Thống kê doanh thu toàn hệ thống**\n\nKhông có giao dịch nào.";
+  if (intent.includes("appointment_stats")) {
+    chartData = buildAppointmentChart(stats, timeRange);
+    reply = "📊 Biểu đồ thống kê lịch hẹn";
+  } else if (intent.includes("revenue_stats")) {
+    const isTotal = intent === "total_revenue_stats";
+    console.log(
+      `[DEBUG][RevenueStats][Controller] Bắt đầu vẽ Chart Doanh thu. Loại: ${isTotal ? "Tổng thể" : "Theo thời gian"}. Tổng tiền: ${stats?.totalRevenue || 0}`,
+    );
+
+    if (stats?.totalRevenue > 0) {
+      chartData = buildRevenueChart(stats, isTotal, timeRange);
+      console.log(
+        `[DEBUG][RevenueStats][Controller] Khởi tạo thành công JSON Chart Data (Pie/Bar) cho doanh thu.`,
+      );
+    } else {
+      console.log(
+        `[DEBUG][RevenueStats][Controller] Tổng doanh thu = 0 -> Fallback sang Text Reply. Không vẽ Chart.`,
+      );
+      reply = `📊 **Thống kê doanh thu ${isTotal ? "toàn hệ thống" : `- ${TIME_TITLE_MAP[timeRange] || timeRange?.toUpperCase() || "Khoảng thời gian"}`}**\n\nKhông có giao dịch nào.`;
+    }
+  } else if (intent === "clinic_revenue_by_month") {
+    console.log(
+      `[DEBUG][ClinicRevenue][Controller] Bắt đầu vẽ Chart Doanh thu phòng khám. Phòng khám: ${clinic.name}, Tháng: ${month}, Năm: ${year}`,
+    );
+    if (!dailyRevenue?.length || dailyRevenue.every((d) => d.revenue === 0)) {
+      reply = `🏥 **${clinic.name}** chưa có doanh thu nào trong tháng ${month}/${year}.`;
+    } else {
+      chartData = buildLineChart(dailyRevenue, clinic.name, month, year);
+      reply = `📊 Biểu đồ doanh thu theo ngày của **${clinic.name}** tháng ${month}/${year}.`;
+    }
+  } else if (intent === "top_doctors_completed_appointments") {
+    console.log(
+      `[DEBUG][TopDoctors][Controller] Đang xử lý Chart cho intent top_doctors... Kiểm tra mảng topDoctors:`,
+      !!topDoctors?.length,
+    );
+    if (!topDoctors?.length) {
+      console.log(
+        `[DEBUG][TopDoctors][Controller] Mảng rỗng -> Fallback sang Text Reply. Bỏ qua vẽ Chart.`,
+      );
+      reply = `Dạ, hiện tại hệ thống chưa ghi nhận bác sĩ nào có lịch khám ở trạng thái hoàn thành ạ.`;
+    } else {
+      console.log(
+        `[DEBUG][TopDoctors][Controller] Dữ liệu chuẩn -> Tiến hành buildLineChart cho ${topDoctors.length} elements.`,
+      );
+      chartData = buildTopDoctorsLineChart(topDoctors);
+      reply = `📊 Biểu đồ thống kê Top bác sĩ có lượng ca khám hoàn thành cao nhất.`;
+    }
   }
-  await saveAndRespond(session, reply, chartData, res);
+
+  return saveAndRespond(session, reply, chartData, res);
 };
 
 const handleAI = async (session, context, parsed, res) => {
-  const systemPrompt = buildAdminPrompt(context);
   const payload = [
-    { role: "system", content: [{ text: systemPrompt }] },
+    { role: "system", content: [{ text: buildAdminPrompt(context) }] },
     ...session.messages
       .slice(-6)
       .map((m) => ({ role: m.role, content: m.content })),
   ];
+
   try {
     const raw = await askPythonEngine(payload);
     let reply = raw,
@@ -318,22 +306,15 @@ const handleAI = async (session, context, parsed, res) => {
       reply = parsedAI.reply || raw;
       state = parsedAI.state_summary || "";
     } catch {}
+
     const meta = {
       intent: parsed.intent,
       ...(context.statusFilter && { statusFilter: context.statusFilter }),
       ...(context.count && { count: context.count }),
       ...(state && { state }),
     };
-    session.messages.push({
-      role: "assistant",
-      content: [{ text: reply }],
-      metadata: JSON.stringify(meta),
-    });
-    await session.save();
-    return res.status(StatusCodes.OK).json({
-      success: true,
-      data: { sessionId: session.sessionId, reply, chartData: null },
-    });
+
+    return saveAndRespond(session, reply, null, res, meta);
   } catch (error) {
     console.error("[AdminChat] AI Engine Error:", error.message);
     throw new ApiError(
@@ -343,30 +324,21 @@ const handleAI = async (session, context, parsed, res) => {
   }
 };
 
-// Mapping intent → handler (dùng thay cho switch-case)
-const INTENT_HANDLERS = {
-  total_appointment_stats: handleAppointmentStats,
-  appointment_stats_by_time: handleAppointmentStats,
-  revenue_stats_by_time: handleRevenueStatsByTime,
-  total_revenue_stats: handleTotalRevenueStats,
-  clinic_revenue_by_month: handleClinicRevenueByMonth,
-};
-
 // ===============================
 // 5. MAIN CONTROLLER
 // ===============================
 
 export const processAdminChat = asyncHandler(async (req, res) => {
   const { sessionId, message } = req.body;
-  if (!sessionId || !message?.trim()) {
+  if (!sessionId || !message?.trim())
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       "Thiếu sessionId hoặc nội dung tin nhắn.",
     );
-  }
 
-  let session = await ChatSession.findOne({ sessionId });
-  if (!session) session = new ChatSession({ sessionId, messages: [] });
+  let session =
+    (await ChatSession.findOne({ sessionId })) ||
+    new ChatSession({ sessionId, messages: [] });
   if (req.user?._id && !session.user) session.user = req.user._id;
 
   session.messages.push({ role: "user", content: [{ text: message }] });
@@ -375,13 +347,20 @@ export const processAdminChat = asyncHandler(async (req, res) => {
   const parsed = parseAdminQuery(message, inheritedStatus);
   const context = await fetchAdminContext(parsed, inheritedStatus);
 
-  // Nếu intent có stats và có handler riêng (biểu đồ) → gọi, else fallback AI
-  const handler = INTENT_HANDLERS[parsed.intent];
+  const isChartIntent = [
+    "total_appointment_stats",
+    "appointment_stats_by_time",
+    "revenue_stats_by_time",
+    "total_revenue_stats",
+    "clinic_revenue_by_month",
+    "top_doctors_completed_appointments",
+  ].includes(parsed.intent);
+
   if (
-    handler &&
-    (context.stats || parsed.intent === "clinic_revenue_by_month")
+    isChartIntent &&
+    (context.stats || parsed.intent === "clinic_revenue_by_month" || parsed.intent === "top_doctors_completed_appointments")
   ) {
-    return await handler(session, context, parsed, res);
+    return await handleCharts(session, context, parsed, res);
   }
   return await handleAI(session, context, parsed, res);
 });

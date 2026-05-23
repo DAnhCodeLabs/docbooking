@@ -711,6 +711,23 @@ export const checkinAppointment = async (appointmentId, user) => {
   appointment.status = "checked_in";
   appointment.checkinTime = now;
   appointment.paymentStatus = "paid";
+
+  // Create Payment record for offline payment on successful checkin
+  if (appointment.paymentMethod === "offline") {
+    const existingPayment = await Payment.findOne({
+      appointmentId: appointment._id,
+    });
+    if (!existingPayment) {
+      const fee = doctorProfile?.consultationFee || 100000;
+      await Payment.create({
+        appointmentId: appointment._id,
+        orderId: appointment._id.toString(),
+        amount: fee,
+        status: "paid",
+      });
+    }
+  }
+
   await appointment.save();
   console.log("[Checkin] Data before return:", {
     patientName: appointment.patientProfile?.fullName,

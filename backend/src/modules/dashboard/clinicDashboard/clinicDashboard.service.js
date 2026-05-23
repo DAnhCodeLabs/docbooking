@@ -194,6 +194,7 @@ export const getClinicDashboardStats = async (userId, startDate, endDate) => {
           "appointmentInfo.doctor": {
             $in: doctorIds.map((id) => new mongoose.Types.ObjectId(id)),
           },
+          "appointmentInfo.paymentMethod": "online", // BỔ SUNG DÒNG NÀY (Chỉ lấy giao dịch thực sự là Online)
           status: "paid",
           updatedAt: { $gte: from, $lte: to },
         },

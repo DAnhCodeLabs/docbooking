@@ -61,6 +61,17 @@ export const getYesterdayLocalRange = () => {
 };
 
 /**
+ * Lấy khoảng thời gian của ngày mai (theo local server)
+ * @returns {{ startUTC: Date, endUTC: Date }}
+ */
+export const getTomorrowLocalRange = () => {
+  const tomorrow = dayjs().add(1, "day");
+  const start = tomorrow.startOf("day");
+  const end = tomorrow.endOf("day");
+  return localRangeToUTC(start, end);
+};
+
+/**
  * Lấy khoảng thời gian của một tuần (từ thứ Hai đến Chủ Nhật) theo local server
  * @param {number} weekOffset - 0: tuần này, -1: tuần trước, 1: tuần sau
  * @returns {{ startUTC: Date, endUTC: Date }}

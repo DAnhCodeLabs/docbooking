@@ -759,12 +759,14 @@ export const checkinAppointment = async (appointmentId, user) => {
 };
 
 export const getAppointments = async (user, query) => {
+  // [CỐT LÕI CŨ BẢO TOÀN] - Xử lý fallback cho chuỗi ngày tháng
   if (query.dateFrom && typeof query.dateFrom === "string") {
     query.dateFrom = dayjs.utc(query.dateFrom).startOf("day").toDate();
   }
   if (query.dateTo && typeof query.dateTo === "string") {
     query.dateTo = dayjs.utc(query.dateTo).endOf("day").toDate();
   }
+
   const { role, _id: userId } = user;
   const page = parseInt(query.page, 10) || 1;
   const limit = parseInt(query.limit, 10) || 10;
@@ -772,7 +774,7 @@ export const getAppointments = async (user, query) => {
 
   const pipeline = [];
 
-  // Xác định điều kiện lọc theo role
+  // --- 1. PHÂN QUYỀN VÀ LỌC THEO BÁC SĨ ---
   let doctorIdsFilter = null;
   if (role === "admin") {
     if (query.doctorId) {
@@ -807,6 +809,8 @@ export const getAppointments = async (user, query) => {
   if (doctorIdsFilter) {
     pipeline.push({ $match: { doctor: { $in: doctorIdsFilter } } });
   }
+
+  // --- 2. LỌC THEO TRẠNG THÁI ---
   if (query.status) {
     const statusArray = query.status.split(",").map((s) => s.trim());
     if (statusArray.length === 1) {
@@ -816,7 +820,7 @@ export const getAppointments = async (user, query) => {
     }
   }
 
-  // Lookup slot & schedule
+  // --- 3. LOOKUP BẢNG SLOT VÀ LỊCH TRÌNH ---
   pipeline.push(
     {
       $lookup: {
@@ -838,22 +842,55 @@ export const getAppointments = async (user, query) => {
     { $unwind: { path: "$scheduleInfo", preserveNullAndEmptyArrays: true } },
   );
 
-  // Lọc theo ngày
+  // --- 4. LỌC THEO NGÀY (CẬP NHẬT MỚI: Strict Date & Tracking Log) ---
+  console.log(
+    "[DEBUG Service] 4. Bắt đầu build pipeline lọc ngày. Tham số nhận được:",
+    {
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+      strictDate: query.strictDate,
+    },
+  );
+
   if (query.dateFrom || query.dateTo) {
     const dateFilter = {};
     if (query.dateFrom) dateFilter.$gte = query.dateFrom;
     if (query.dateTo) dateFilter.$lte = query.dateTo;
-    pipeline.push({
-      $match: {
-        $or: [
-          { "scheduleInfo.date": dateFilter },
-          { "scheduleInfo.date": { $exists: false } },
-        ],
-      },
-    });
+
+    console.log(
+      "[DEBUG Service] 5. Object dateFilter đẩy vào MongoDB:",
+      dateFilter,
+    );
+
+    if (query.strictDate) {
+      // CODE MỚI: Lọc chính xác tuyệt đối, loại bỏ các lịch hẹn bị lỗi (không có bảng schedule)
+      pipeline.push({
+        $match: { "scheduleInfo.date": dateFilter },
+      });
+      console.log(
+        "[DEBUG Service] 6. Đã push $match với STRICT DATE (Loại record không có schedule)",
+      );
+    } else {
+      // CODE CŨ BẢO TOÀN: Dùng cho DatePicker tùy chỉnh
+      pipeline.push({
+        $match: {
+          $or: [
+            { "scheduleInfo.date": dateFilter },
+            { "scheduleInfo.date": { $exists: false } },
+          ],
+        },
+      });
+      console.log(
+        "[DEBUG Service] 6. Đã push $match với luồng CŨ (Cho phép exists: false)",
+      );
+    }
+  } else {
+    console.log(
+      "[DEBUG Service] 5. KHÔNG CÓ dateFrom hay dateTo, bỏ qua lọc ngày -> KẾT QUẢ: LẤY TOÀN BỘ.",
+    );
   }
 
-  // Lookup patient và doctor
+  // --- 5. LOOKUP BỆNH NHÂN VÀ BÁC SĨ ---
   pipeline.push(
     {
       $lookup: {
@@ -875,7 +912,7 @@ export const getAppointments = async (user, query) => {
     { $unwind: { path: "$doctorInfo", preserveNullAndEmptyArrays: true } },
   );
 
-  // Search
+  // --- 6. TÌM KIẾM THEO TỪ KHÓA ---
   if (query.search) {
     const searchRegex = { $regex: query.search, $options: "i" };
     pipeline.push({
@@ -890,14 +927,13 @@ export const getAppointments = async (user, query) => {
     });
   }
 
-  // Sort
+  // --- 7. SẮP XẾP VÀ PHÂN TRANG ---
   const sortField = query.sort?.startsWith("-")
     ? query.sort.slice(1)
     : query.sort || "createdAt";
   const sortOrder = query.sort?.startsWith("-") ? -1 : 1;
   pipeline.push({ $sort: { [sortField]: sortOrder } });
 
-  // Phân trang
   pipeline.push({
     $facet: {
       metadata: [{ $count: "total" }],
@@ -909,7 +945,7 @@ export const getAppointments = async (user, query) => {
   const total = results[0]?.metadata[0]?.total || 0;
   let appointments = results[0]?.data || [];
 
-  // Gán specialty, clinicName (giống getMyAppointments)
+  // --- 8. GÁN THÔNG TIN CHUYÊN KHOA VÀ PHÒNG KHÁM ---
   if (appointments.length > 0) {
     const doctorIds = [
       ...new Set(
@@ -950,6 +986,7 @@ export const getAppointments = async (user, query) => {
     }
   }
 
+  // Định dạng chuẩn lại kết quả trả về
   const formattedAppointments = appointments.map((app) => ({
     ...app,
     slot: app.slotInfo,

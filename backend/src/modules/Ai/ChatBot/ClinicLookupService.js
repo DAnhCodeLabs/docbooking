@@ -6,31 +6,20 @@ import User from "../../../models/User.js";
 import { generateEmbedding } from "./AiService.js";
 
 /**
- * Chuẩn hóa chuỗi tiếng Việt (bỏ dấu, lowercase, xóa ký tự đặc biệt)
- * @param {string} str
- * @returns {string}
+ * UTILS: Chuẩn hóa & Xử lý chuỗi (Native Performance)
  */
 const normalizeVietnamese = (str) => {
   if (!str) return "";
-  const map = {
-    á: "a", à: "a", ả: "a", ã: "a", ạ: "a", ă: "a", ắ: "a", ằ: "a", ẳ: "a", ẵ: "a", ặ: "a",
-    â: "a", ấ: "a", ầ: "a", ẩ: "a", ẫ: "a", ậ: "a", đ: "d", é: "e", è: "e", ẻ: "e", ẽ: "e",
-    ẹ: "e", ê: "e", ế: "e", ề: "e", ể: "e", ễ: "e", ệ: "e", í: "i", ì: "i", ỉ: "i", ĩ: "i",
-    ị: "i", ó: "o", ò: "o", ỏ: "o", õ: "o", ọ: "o", ô: "o", ố: "o", ồ: "o", ổ: "o", ỗ: "o",
-    ộ: "o", ơ: "o", ớ: "o", ờ: "o", ở: "o", ỡ: "o", ợ: "o", ú: "u", ù: "u", ủ: "u", ũ: "u",
-    ụ: "u", ư: "u", ứ: "u", ừ: "u", ử: "u", ữ: "u", ự: "u", ý: "y", ỳ: "y", ỷ: "y", ỹ: "y", ỵ: "y",
-  };
   return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
     .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s]/g, (c) => map[c] || "");
+    .replace(/[^a-z0-9\s]/g, "")
+    .trim();
 };
 
-/**
- * Mở rộng từ viết tắt thông dụng trong y tế
- * @param {string} str - Chuỗi đã chuẩn hóa
- * @returns {string}
- */
 const expandAbbreviations = (str) => {
   if (!str) return "";
   return str
@@ -40,71 +29,61 @@ const expandAbbreviations = (str) => {
     .replace(/\bkhoa\b/g, "chuyên khoa");
 };
 
-/**
- * Tính tỷ lệ từ khóa match (không yêu cầu 100%)
- * @param {string} normalizedName - Tên trong DB đã chuẩn hóa
- * @param {string[]} queryWords - Mảng từ khóa từ user
- * @returns {number} - Tỷ lệ 0..1
- */
 const wordMatchRatio = (normalizedName, queryWords) => {
   let matched = 0;
   for (const word of queryWords) {
-    if (word.length < 2) continue;
-    if (normalizedName.includes(word)) matched++;
+    if (word.length >= 2 && normalizedName.includes(word)) matched++;
   }
   return queryWords.length ? matched / queryWords.length : 0;
 };
 
-/**
- * Tìm kiếm clinic theo tên (ưu tiên chính xác, sau đó fuzzy với ngưỡng 60%)
- * @param {string} queryName - Tên bệnh viện người dùng nhập
- * @returns {Promise<Object|null>} - Clinic object hoặc null
- */
+const prepareSearchTokens = (queryName) => {
+  const normalized = expandAbbreviations(normalizeVietnamese(queryName));
+  return normalized.split(/\s+/).filter((w) => w.length >= 2);
+};
+
+// ============================================================================
+// PUBLIC SERVICES
+// ============================================================================
+
 export const findClinicByName = async (queryName) => {
   if (!queryName || queryName.length < 2) return null;
 
-  // Chuẩn hóa và mở rộng viết tắt
-  let normalizedQuery = normalizeVietnamese(queryName);
-  normalizedQuery = expandAbbreviations(normalizedQuery);
-  const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
-
-  // Bước 1: Exact match (case-insensitive) trên tên gốc
-  let clinic = await ClinicLead.findOne({
+  // 1. Exact match (case-insensitive)
+  const exactClinic = await ClinicLead.findOne({
     clinicName: { $regex: new RegExp(`^${queryName}$`, "i") },
     status: "resolved",
   }).lean();
-  if (clinic) return clinic;
+  if (exactClinic) return exactClinic;
 
-  // Bước 2: Fuzzy match với ngưỡng 60%
+  // 2. Fuzzy Match (O(N) Single Pass - Memory Optimized)
+  const queryWords = prepareSearchTokens(queryName);
   const allClinics = await ClinicLead.find({ status: "resolved" })
     .select("clinicName address clinicType status")
     .lean();
 
-  const scored = allClinics.map(c => {
-    let normalizedName = normalizeVietnamese(c.clinicName);
-    normalizedName = expandAbbreviations(normalizedName);
-    const ratio = wordMatchRatio(normalizedName, queryWords);
-    const lengthBonus = 1 - Math.min(1, normalizedName.length / 100);
-    const score = ratio * 0.8 + lengthBonus * 0.2;
-    return { clinic: c, score, ratio };
-  });
+  let bestClinic = null;
+  let highestScore = -1;
 
-  const goodMatches = scored.filter(s => s.ratio >= 0.6);
-  if (goodMatches.length) {
-    goodMatches.sort((a, b) => b.score - a.score);
-    console.log(`[ClinicLookup] Fuzzy match: "${queryName}" → "${goodMatches[0].clinic.clinicName}" (ratio=${goodMatches[0].ratio})`);
-    return goodMatches[0].clinic;
+  for (const c of allClinics) {
+    const normalizedName = expandAbbreviations(
+      normalizeVietnamese(c.clinicName),
+    );
+    const ratio = wordMatchRatio(normalizedName, queryWords);
+
+    if (ratio >= 0.6) {
+      const lengthBonus = 1 - Math.min(1, normalizedName.length / 100);
+      const score = ratio * 0.8 + lengthBonus * 0.2;
+      if (score > highestScore) {
+        highestScore = score;
+        bestClinic = c;
+      }
+    }
   }
 
-  console.log(`[ClinicLookup] Không tìm thấy clinic cho: "${queryName}" (có ${allClinics.length} clinic resolved)`);
-  return null;
+  return bestClinic;
 };
 
-/**
- * Lấy thông tin cơ bản của clinic để hiển thị
- * @param {Object} clinic
- * @returns {Object}
- */
 export const getClinicBasicInfo = (clinic) => {
   if (!clinic) return null;
   return {
@@ -115,179 +94,138 @@ export const getClinicBasicInfo = (clinic) => {
   };
 };
 
-/**
- * Tìm chuyên khoa theo tên (exact → fuzzy với ngưỡng 60%)
- * @param {string} queryName
- * @returns {Promise<Object|null>}
- */
 export const findSpecialtyByName = async (queryName) => {
   if (!queryName || queryName.length < 2) return null;
 
-  let normalizedQuery = normalizeVietnamese(queryName);
-  normalizedQuery = expandAbbreviations(normalizedQuery);
-  const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
-
-  // Exact match
-  let specialty = await Specialty.findOne({
+  // 1. Exact Match
+  const exactSpecialty = await Specialty.findOne({
     name: { $regex: new RegExp(`^${queryName}$`, "i") },
     status: "active",
   }).lean();
-  if (specialty) return specialty;
+  if (exactSpecialty) return exactSpecialty;
 
-  // Fuzzy
+  // 2. Fuzzy Match (O(N) Single Pass)
+  const queryWords = prepareSearchTokens(queryName);
   const allSpecialties = await Specialty.find({ status: "active" })
     .select("name description")
     .lean();
 
-  const scored = allSpecialties.map(s => {
-    let normalizedName = normalizeVietnamese(s.name);
-    normalizedName = expandAbbreviations(normalizedName);
-    const ratio = wordMatchRatio(normalizedName, queryWords);
-    return { specialty: s, ratio };
-  });
+  let bestSpecialty = null;
+  let highestRatio = -1;
 
-  const goodMatches = scored.filter(s => s.ratio >= 0.6);
-  if (goodMatches.length) {
-    goodMatches.sort((a, b) => b.ratio - a.ratio);
-    console.log(`[ClinicLookup] Fuzzy match specialty: "${queryName}" → "${goodMatches[0].specialty.name}" (ratio=${goodMatches[0].ratio})`);
-    return goodMatches[0].specialty;
+  for (const s of allSpecialties) {
+    const normalizedName = expandAbbreviations(normalizeVietnamese(s.name));
+    const ratio = wordMatchRatio(normalizedName, queryWords);
+
+    if (ratio >= 0.6 && ratio > highestRatio) {
+      highestRatio = ratio;
+      bestSpecialty = s;
+    }
   }
 
-  console.log(`[ClinicLookup] Không tìm thấy specialty cho: "${queryName}"`);
-  return null;
+  return bestSpecialty;
 };
 
-/**
- * Kiểm tra một clinic có chứa một specialty không
- * @param {string} clinicId
- * @param {string} specialtyId
- * @returns {Promise<boolean>}
- */
 export const clinicHasSpecialty = async (clinicId, specialtyId) => {
   const clinic = await ClinicLead.findById(clinicId)
     .select("specialties")
     .lean();
-  if (!clinic) return false;
-  return clinic.specialties.some(
-    (id) => id.toString() === specialtyId.toString(),
-  );
+  return clinic
+    ? clinic.specialties.some((id) => id.toString() === specialtyId.toString())
+    : false;
 };
 
-/**
- * Tìm bác sĩ theo tên (exact → text search → vector search) có populate clinicId và specialty
- * @param {string} doctorName
- * @returns {Promise<Object|null>} - { user, doctorProfile }
- */
 export const findDoctorByName = async (doctorName) => {
   if (!doctorName || doctorName.length < 2) return null;
+  const populateOpts = {
+    path: "doctorProfile",
+    populate: [{ path: "clinicId" }, { path: "specialty" }],
+  };
 
-  // Bước 1: Exact match + populate
+  // 1. Exact match
   let user = await User.findOne({
     fullName: { $regex: new RegExp(`^${doctorName}$`, "i") },
     role: "doctor",
     status: "active",
-  }).populate({
-    path: "doctorProfile",
-    populate: [{ path: "clinicId" }, { path: "specialty" }],
-  });
+  }).populate(populateOpts);
 
-  if (user && user.doctorProfile) {
-    return { user, doctorProfile: user.doctorProfile };
-  }
+  if (user?.doctorProfile) return { user, doctorProfile: user.doctorProfile };
 
-  // Bước 2: Text search
+  // 2. Text search
   const textSearchUsers = await User.find(
-    {
-      $text: { $search: doctorName },
-      role: "doctor",
-      status: "active",
-    },
+    { $text: { $search: doctorName }, role: "doctor", status: "active" },
     { score: { $meta: "textScore" } },
   )
     .sort({ score: { $meta: "textScore" } })
     .limit(3)
-    .populate({
-      path: "doctorProfile",
-      populate: [{ path: "clinicId" }, { path: "specialty" }],
-    });
+    .populate(populateOpts);
 
-  const valid = textSearchUsers.find((u) => u.doctorProfile);
-  if (valid) return { user: valid, doctorProfile: valid.doctorProfile };
+  const validMatch = textSearchUsers.find((u) => u.doctorProfile);
+  if (validMatch)
+    return { user: validMatch, doctorProfile: validMatch.doctorProfile };
 
-  // Bước 3: Vector search (Atlas)
+  // 3. Vector search (Atlas)
   try {
     const queryEmbedding = await generateEmbedding(`bác sĩ ${doctorName}`);
-    if (queryEmbedding && queryEmbedding.length === 768) {
-      const vectorResults = await DoctorProfile.aggregate([
-        {
-          $vectorSearch: {
-            index: "doctor_embedding_index",
-            path: "embedding",
-            queryVector: queryEmbedding,
-            numCandidates: 100,
-            limit: 5,
-            filter: { status: "active" },
-          },
-        },
-        {
-          $lookup: {
-            from: "users",
-            localField: "user",
-            foreignField: "_id",
-            as: "userInfo",
-          },
-        },
-        { $unwind: "$userInfo" },
-        { $match: { "userInfo.role": "doctor", "userInfo.status": "active" } },
-        { $limit: 3 },
-      ]);
+    if (!queryEmbedding || queryEmbedding.length !== 768) return null;
 
-      if (vectorResults.length) {
-        await DoctorProfile.populate(vectorResults, [
-          { path: "clinicId" },
-          { path: "specialty" },
-        ]);
-        const normalizedInput = normalizeVietnamese(doctorName);
-        for (const doc of vectorResults) {
-          const normalizedName = normalizeVietnamese(doc.userInfo.fullName);
-          if (
-            normalizedName.includes(normalizedInput) ||
-            normalizedInput.includes(normalizedName)
-          ) {
-            return { user: doc.userInfo, doctorProfile: doc };
-          }
+    const vectorResults = await DoctorProfile.aggregate([
+      {
+        $vectorSearch: {
+          index: "doctor_embedding_index",
+          path: "embedding",
+          queryVector: queryEmbedding,
+          numCandidates: 100,
+          limit: 5,
+          filter: { status: "active" },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "user",
+          foreignField: "_id",
+          as: "userInfo",
+        },
+      },
+      { $unwind: "$userInfo" },
+      { $match: { "userInfo.role": "doctor", "userInfo.status": "active" } },
+      { $limit: 3 },
+    ]);
+
+    if (vectorResults.length) {
+      await DoctorProfile.populate(vectorResults, [
+        { path: "clinicId" },
+        { path: "specialty" },
+      ]);
+      const normalizedInput = normalizeVietnamese(doctorName);
+
+      for (const doc of vectorResults) {
+        const normalizedName = normalizeVietnamese(doc.userInfo.fullName);
+        if (
+          normalizedName.includes(normalizedInput) ||
+          normalizedInput.includes(normalizedName)
+        ) {
+          return { user: doc.userInfo, doctorProfile: doc };
         }
-        const first = vectorResults[0];
-        return { user: first.userInfo, doctorProfile: first };
       }
+      return {
+        user: vectorResults[0].userInfo,
+        doctorProfile: vectorResults[0],
+      };
     }
   } catch (error) {
-    console.error("[VectorSearch] Lỗi khi tìm bác sĩ:", error.message);
+    console.error("[VectorSearch] Error:", error.message);
   }
 
   return null;
 };
 
-/**
- * Định dạng thông tin bác sĩ để trả về trong prompt
- * @param {Object} doctorProfile
- * @param {Object} user
- * @returns {Object}
- */
 export const getDoctorResponseData = (doctorProfile, user) => {
   if (!doctorProfile || !user) return null;
 
-  let clinicName = null;
-  let clinicAddress = null;
   const clinic = doctorProfile.clinicId;
-
-  if (clinic && clinic.status === "resolved") {
-    clinicName = clinic.clinicName;
-    clinicAddress = clinic.address || null;
-  } else if (doctorProfile.customClinicName) {
-    clinicName = doctorProfile.customClinicName;
-    clinicAddress = null;
-  }
+  const isResolvedClinic = clinic && clinic.status === "resolved";
 
   return {
     fullName: user.fullName,
@@ -297,22 +235,20 @@ export const getDoctorResponseData = (doctorProfile, user) => {
     bio: doctorProfile.bio,
     totalReviews: doctorProfile.totalReviews,
     sumRating: doctorProfile.sumRating,
-    clinicName,
-    clinicAddress,
+    clinicName: isResolvedClinic
+      ? clinic.clinicName
+      : doctorProfile.customClinicName || null,
+    clinicAddress: isResolvedClinic ? clinic.address || null : null,
     status: doctorProfile.status,
   };
 };
 
-/**
- * Lấy danh sách bác sĩ của một clinic (không lọc chuyên khoa)
- * @param {string} clinicId
- * @returns {Promise<Array>}
- */
 export const findDoctorsByClinic = async (clinicId) => {
   const doctors = await DoctorProfile.find({ clinicId, status: "active" })
     .populate("user", "fullName")
     .populate("specialty", "name")
     .lean();
+
   return doctors.map((doc) => ({
     fullName: doc.user?.fullName || "Chưa rõ",
     specialty: doc.specialty?.name || null,
@@ -320,127 +256,128 @@ export const findDoctorsByClinic = async (clinicId) => {
   }));
 };
 
-/**
- * Kiểm tra bác sĩ có thuộc clinic cụ thể không (dựa trên clinicId hoặc customClinicName)
- * @param {Object} doctorInfo - kết quả từ getDoctorResponseData
- * @param {string} clinicName - tên clinic cần kiểm tra
- * @returns {boolean}
- */
 export const doctorBelongsToClinic = (doctorInfo, clinicName) => {
-  if (!doctorInfo || !clinicName) return false;
+  if (!doctorInfo?.clinicName || !clinicName) return false;
   const normalizedInput = normalizeVietnamese(clinicName);
-  const doctorClinic = doctorInfo.clinicName;
-  if (!doctorClinic) return false;
-  const normalizedDoctorClinic = normalizeVietnamese(doctorClinic);
+  const normalizedDoctorClinic = normalizeVietnamese(doctorInfo.clinicName);
   return (
     normalizedDoctorClinic.includes(normalizedInput) ||
     normalizedInput.includes(normalizedDoctorClinic)
   );
 };
 
-/**
- * Tìm danh sách bác sĩ theo clinicId và specialtyId, có thể sắp xếp theo rating (bác sĩ giỏi)
- * @param {string|mongoose.Types.ObjectId} clinicId
- * @param {string|mongoose.Types.ObjectId} specialtyId
- * @param {boolean} sortByRating - true nếu ưu tiên bác sĩ có đánh giá cao
- * @returns {Promise<Array>} danh sách bác sĩ đã format chuẩn đầu ra
- */
 export const findDoctorsByClinicAndSpecialty = async (
   clinicId,
   specialtyId,
   sortByRating = false,
 ) => {
-  console.log("\n=== DEBUG: BƯỚC 2 - TRONG CLINIC LOOKUP SERVICE ===");
-  console.log(
-    "A. Nhận tham số -> clinicId:",
-    clinicId,
-    " | specialtyId:",
-    specialtyId,
-  );
+  if (!clinicId || !specialtyId) return [];
 
-  if (!clinicId || !specialtyId) {
-    console.log("B. Hủy truy vấn vì thiếu ID");
-    return [];
-  }
-
-  // LOG 1: Tìm chay KHÔNG CẦN ĐIỀU KIỆN TRẠNG THÁI để xem data gốc có tồn tại không
-  const totalRaw = await DoctorProfile.countDocuments({
-    clinicId: clinicId,
-    specialty: specialtyId,
-  });
-  console.log(`C. Tổng số hồ sơ (mọi status): ${totalRaw}`);
-
-  const activeCount = await DoctorProfile.countDocuments({
-    clinicId: clinicId,
-    specialty: specialtyId,
-    status: "active",
-  });
-  console.log(`D. Số hồ sơ status active: ${activeCount}`);
-
+  // Triệt tiêu Query rác và N+1 Query bằng cách populate trực tiếp "specialty"
   const doctors = await DoctorProfile.find({
-    clinicId: clinicId,
+    clinicId,
     specialty: specialtyId,
     status: "active",
   })
     .populate({
       path: "user",
       match: { role: "doctor", status: "active" },
-      select: "fullName status role",
+      select: "fullName",
     })
+    .populate({ path: "specialty", select: "name" })
+    .lean();
+
+  const validDoctors = doctors
+    .filter((doc) => doc.user)
+    .map((doc) => ({
+      ...doc,
+      avgRating: doc.totalReviews ? doc.sumRating / doc.totalReviews : 0,
+    }));
+
+  validDoctors.sort((a, b) =>
+    sortByRating ? b.avgRating - a.avgRating : b.totalReviews - a.totalReviews,
+  );
+
+  return validDoctors.slice(0, 5).map((doc) => ({
+    fullName: doc.user.fullName,
+    specialty: doc.specialty?._id || doc.specialty,
+    specialtyName: doc.specialty?.name || null,
+    experience: doc.experience,
+    consultationFee: doc.consultationFee,
+    totalReviews: doc.totalReviews,
+    avgRating: doc.avgRating,
+    bio: doc.bio,
+    doctorId: doc._id,
+  }));
+};
+
+/**
+ * Lấy toàn bộ danh sách bác sĩ theo chuyên khoa (bất kể bệnh viện).
+ * Tự động tính rating từ bảng Review, sắp xếp và giới hạn 10 kết quả tốt nhất.
+ * @param {string} specialtyId
+ * @returns {Promise<Object>} { totalCount, topDoctors }
+ */
+export const findDoctorsBySpecialtyOnly = async (specialtyId) => {
+  if (!specialtyId) return { totalCount: 0, topDoctors: [] };
+
+  // 1. Lấy danh sách hồ sơ bác sĩ
+  const doctors = await mongoose.model("DoctorProfile").find({ specialty: specialtyId, status: "active" })
+    .populate({ path: "user", match: { role: "doctor", status: "active" }, select: "fullName" })
+    .populate({ path: "clinicId", select: "clinicName status" })
     .lean();
 
   const validDoctors = doctors.filter((doc) => doc.user);
-  console.log(`E. Số bác sĩ có user active hợp lệ: ${validDoctors.length}`);
+  if (validDoctors.length === 0) return { totalCount: 0, topDoctors: [] };
 
-  if (totalRaw > 0 && activeCount === 0) {
-    console.warn("⚠️ Có bác sĩ nhưng không active. Kiểm tra status của DoctorProfile.");
-  }
-  if (activeCount > 0 && validDoctors.length === 0) {
-    console.warn("⚠️ Bác sĩ active nhưng tài khoản User bị khóa hoặc role không phải doctor.");
-  }
+  // 2. Trích xuất mảng user ID của các bác sĩ để truy vấn gộp
+  const doctorUserIds = validDoctors.map(doc => doc.user._id);
 
-  const formattedDoctors = validDoctors.map((doc) => {
-    const avgRating =
-      doc.totalReviews && doc.totalReviews > 0
-        ? doc.sumRating / doc.totalReviews
-        : 0;
-    return {
-      ...doc,
-      avgRating,
+  // 3. AGGREGATION: Tính tổng sao trực tiếp từ Collection Review (Chỉ 1 Query duy nhất)
+  const reviewStats = await mongoose.model("Review").aggregate([
+    { $match: { doctorId: { $in: doctorUserIds } } },
+    {
+      $group: {
+        _id: "$doctorId",
+        totalReviews: { $sum: 1 },
+        sumRating: { $sum: "$rating" }
+      }
+    }
+  ]);
+
+  // 4. Tạo Map tra cứu nhanh O(1) trên RAM
+  const statsMap = {};
+  reviewStats.forEach(stat => {
+    statsMap[stat._id.toString()] = {
+      totalReviews: stat.totalReviews,
+      avgRating: stat.totalReviews > 0 ? stat.sumRating / stat.totalReviews : 0
     };
   });
 
-  if (sortByRating) {
-    formattedDoctors.sort((a, b) => b.avgRating - a.avgRating);
-  } else {
-    formattedDoctors.sort((a, b) => b.totalReviews - a.totalReviews);
-  }
+  // 5. Gắn điểm sao thực tế vào danh sách bác sĩ
+  const enrichedDoctors = validDoctors.map((doc) => {
+    const docUserIdStr = doc.user._id.toString();
+    const realStats = statsMap[docUserIdStr] || { totalReviews: 0, avgRating: 0 };
 
-  const limitedDoctors = formattedDoctors.slice(0, 5);
-  const result = [];
-  for (const doc of limitedDoctors) {
-    let specialtyName = null;
-    if (doc.specialty) {
-      const spec = await Specialty.findById(doc.specialty)
-        .select("name")
-        .lean();
-      specialtyName = spec ? spec.name : null;
-    }
-    result.push({
-      fullName: doc.user?.fullName || "Chưa rõ",
-      specialty: doc.specialty,
-      specialtyName: specialtyName,
+    return {
+      ...doc,
+      totalReviews: realStats.totalReviews,
+      avgRating: realStats.avgRating,
+    };
+  });
+
+  // 6. Thuật toán: Sắp xếp theo Đánh giá trung bình -> Số lượt đánh giá
+  enrichedDoctors.sort((a, b) => b.avgRating !== a.avgRating ? b.avgRating - a.avgRating : b.totalReviews - a.totalReviews);
+
+  return {
+    totalCount: enrichedDoctors.length,
+    topDoctors: enrichedDoctors.slice(0, 10).map((doc) => ({
+      fullName: doc.user.fullName,
       experience: doc.experience,
       consultationFee: doc.consultationFee,
-      totalReviews: doc.totalReviews,
-      avgRating: doc.avgRating,
-      bio: doc.bio,
+      totalReviews: doc.totalReviews, // Số lượng đánh giá thực tế từ bảng Review
+      avgRating: doc.avgRating,       // Sao trung bình thực tế từ bảng Review
+      clinicName: (doc.clinicId && doc.clinicId.status === "resolved") ? doc.clinicId.clinicName : (doc.customClinicName || "Chưa cập nhật"),
       doctorId: doc._id,
-    });
-  }
-
-  console.log(`F. Kết quả cuối: ${result.length} bác sĩ`);
-  console.log("===================================================\n");
-
-  return result;
+    }))
+  };
 };

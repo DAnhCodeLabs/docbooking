@@ -106,8 +106,8 @@ const doctorProfileSchema = new mongoose.Schema(
   },
 );
 
-// MIDDLEWARE: Cập nhật gọi hàm generateEmbedding trực tiếp
-doctorProfileSchema.pre("save", async function (next) {
+// MIDDLEWARE: Sửa lỗi đồng bộ/bất đồng bộ bằng cách loại bỏ callback next() trong async hook
+doctorProfileSchema.pre("save", async function () {
   if (
     this.isModified("bio") ||
     this.isModified("experience") ||
@@ -135,7 +135,7 @@ doctorProfileSchema.pre("save", async function (next) {
 
       const textToEmbed = `Bác sĩ ${doctorName}, chuyên khoa ${specName}. Kinh nghiệm thực tế ${this.experience} năm. Thông tin chuyên môn và điều trị: ${this.bio || "Không có"}`;
 
-      // GỌI HÀM: Không dùng AiService.generateEmbedding nữa
+      // GỌI HÀM: Sinh vector embedding từ AI Service
       const vectorData = await generateEmbedding(textToEmbed);
 
       if (vectorData && vectorData.length === 768) {
@@ -151,7 +151,6 @@ doctorProfileSchema.pre("save", async function (next) {
       this.embedding = undefined;
     }
   }
-  next();
 });
 
 // Indexes

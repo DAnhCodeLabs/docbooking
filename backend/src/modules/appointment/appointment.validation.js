@@ -62,6 +62,21 @@ export const getAppointmentsSchema = z.object({
       .string()
       .regex(/^[0-9a-fA-F]{24}$/, "ID bác sĩ không hợp lệ")
       .optional(),
+    timePreset: z
+      .enum([
+        "today",
+        "yesterday",
+        "tomorrow",
+        "this_week",
+        "last_week",
+        "next_week",
+        "this_month",
+        "last_month",
+        "next_month",
+        "all",
+        "custom",
+      ])
+      .optional(),
   }),
 });
 

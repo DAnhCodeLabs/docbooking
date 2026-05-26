@@ -3,33 +3,48 @@
 // ============================================================
 import mongoose from "mongoose";
 import Appointment from "../../../models/Appointment.js";
-import Slot from "../../../models/Slot.js";
 import Schedule from "../../../models/Schedule.js";
-import User from "../../../models/User.js";
-import DoctorProfile from "../../../models/DoctorProfile.js";
-import ClinicLead from "../../../models/ClinicLead.js";
+import Slot from "../../../models/Slot.js";
 import MedicalConsultation from "../../../models/MedicalConsultation.js";
 import MedicalRecord from "../../../models/MedicalRecord.js";
 
+// ============================================================================
+// UTILS: Helper Functions
+// ============================================================================
+
 /**
- * Private: Lấy và format appointments theo filter
- * @param {ObjectId} userId
- * @param {Object} filter - Điều kiện MongoDB bổ sung (ví dụ: { slot: { $in: [...] } })
- * @param {Object} options - { limit, includeCancelled }
- * @returns {Promise<Array>} - Mảng các object đã format
+ * Tạo khoảng thời gian [start, end) chuẩn UTC cho một ngày bất kỳ
  */
+const getUtcBoundary = (dateInput) => {
+  if (!dateInput) return null;
+  const d = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+
+  const start = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start, end };
+};
+
+const STATUS_MAP = {
+  pending_payment: "Chờ thanh toán",
+  confirmed: "Đã xác nhận",
+  checked_in: "Đã check-in",
+  completed: "Đã hoàn thành",
+  cancelled: "Đã hủy",
+};
+
+// ============================================================================
+// PRIVATE SERVICES
+// ============================================================================
+
 const _fetchAppointments = async (userId, filter = {}, options = {}) => {
   const { limit = 10, includeCancelled = true } = options;
+  const finalFilter = { patientProfile: userId, ...filter };
 
-  const baseFilter = { patientProfile: userId };
   if (!includeCancelled) {
-    baseFilter.status = { $ne: "cancelled" };
+    finalFilter.status = { $ne: "cancelled" };
   }
-  const finalFilter = { ...baseFilter, ...filter };
-  console.log(
-    `[DEBUG _fetchAppointments] finalFilter:`,
-    JSON.stringify(finalFilter, null, 2),
-  );
 
   const appointments = await Appointment.find(finalFilter)
     .populate({
@@ -38,301 +53,197 @@ const _fetchAppointments = async (userId, filter = {}, options = {}) => {
       populate: {
         path: "doctorProfile",
         select: "specialty consultationFee customClinicName clinicId",
-        populate: {
-          path: "clinicId",
-          select: "clinicName address",
-        },
+        populate: { path: "clinicId", select: "clinicName address" },
       },
     })
     .populate({
       path: "slot",
       select: "startTime endTime scheduleId",
-      populate: {
-        path: "scheduleId",
-        select: "date",
-      },
+      populate: { path: "scheduleId", select: "date" },
     })
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
 
-  console.log(
-    `[DEBUG _fetchAppointments] Raw appointments count: ${appointments.length}`,
-  );
-
-  // Format kết quả
-  const formatted = appointments.map((app) => {
-    const doctor = app.doctor || {};
-    const doctorProfile = doctor.doctorProfile || {};
-    let specialtyName = null;
-    if (doctorProfile.specialty) {
-      specialtyName =
-        doctorProfile.specialty.name || doctorProfile.specialty.toString();
-    }
-    let clinicName = null;
-    if (doctorProfile.clinicId && doctorProfile.clinicId.clinicName) {
-      clinicName = doctorProfile.clinicId.clinicName;
-    } else if (doctorProfile.customClinicName) {
-      clinicName = doctorProfile.customClinicName;
-    }
-    let dateStr = null;
-    let timeStr = null;
-    if (app.slot) {
-      const schedule = app.slot.scheduleId;
-      if (schedule && schedule.date) {
-        dateStr = new Date(schedule.date).toISOString().split("T")[0];
-      }
-      if (app.slot.startTime && app.slot.endTime) {
-        timeStr = `${app.slot.startTime} - ${app.slot.endTime}`;
-      }
-    }
-    const statusMap = {
-      pending_payment: "Chờ thanh toán",
-      confirmed: "Đã xác nhận",
-      checked_in: "Đã check-in",
-      completed: "Đã hoàn thành",
-      cancelled: "Đã hủy",
-    };
-    const statusText = statusMap[app.status] || app.status;
+  return appointments.map((app) => {
+    const docProfile = app.doctor?.doctorProfile;
+    const scheduleDate = app.slot?.scheduleId?.date;
 
     return {
       id: app._id,
-      date: dateStr,
-      time: timeStr,
-      doctorName: doctor.fullName || "Bác sĩ (không rõ)",
-      doctorId: doctor._id ? doctor._id.toString() : null,
-      specialty: specialtyName,
+      date: scheduleDate
+        ? new Date(scheduleDate).toISOString().split("T")[0]
+        : null,
+      time:
+        app.slot?.startTime && app.slot?.endTime
+          ? `${app.slot.startTime} - ${app.slot.endTime}`
+          : null,
+      doctorName: app.doctor?.fullName || "Bác sĩ (không rõ)",
+      doctorId: app.doctor?._id?.toString() || null,
+      specialty:
+        docProfile?.specialty?.name ||
+        docProfile?.specialty?.toString() ||
+        null,
       status: app.status,
-      statusText,
-      clinicName: clinicName || "Chưa cập nhật",
+      statusText: STATUS_MAP[app.status] || app.status,
+      clinicName:
+        docProfile?.clinicId?.clinicName ||
+        docProfile?.customClinicName ||
+        "Chưa cập nhật",
       cancellationReason: app.cancellationReason || null,
-      // === THÊM 2 DÒNG MỚI ===
-      paymentStatus: app.paymentStatus || null, // "pending", "paid", "failed"
-      paymentMethod: app.paymentMethod || null, // "online", "offline"
+      paymentStatus: app.paymentStatus || null,
+      paymentMethod: app.paymentMethod || null,
     };
   });
-
-  console.log(
-    `[DEBUG _fetchAppointments] Formatted appointments count: ${formatted.length}`,
-  );
-  return formatted;
 };
 
-// ================== PUBLIC API ==================
+// ============================================================================
+// PUBLIC API
+// ============================================================================
 
-/**
- * Lấy danh sách lịch hẹn của bệnh nhân (tất cả)
- * @param {string|ObjectId} userId
- * @param {Object} options
- * @returns {Promise<Array>}
- */
 export const getUserAppointments = async (userId, options = {}) => {
-  console.log(`[DEBUG getUserAppointments] userId=${userId}`);
   return _fetchAppointments(userId, {}, options);
 };
 
-/**
- * Lấy danh sách lịch hẹn của bệnh nhân theo bác sĩ
- * @param {string|ObjectId} userId
- * @param {string|ObjectId} doctorId
- * @param {Object} options
- * @returns {Promise<Array>}
- */
 export const getUserAppointmentsByDoctor = async (
   userId,
   doctorId,
   options = {},
 ) => {
-  console.log(
-    `[DEBUG getUserAppointmentsByDoctor] userId=${userId}, doctorId=${doctorId}`,
-  );
   if (!doctorId) return [];
   return _fetchAppointments(userId, { doctor: doctorId }, options);
 };
 
-/**
- * Lấy danh sách lịch hẹn của bệnh nhân theo ngày (dựa trên schedule.date)
- * @param {string|ObjectId} userId
- * @param {Date|string} date - Date object hoặc string YYYY-MM-DD (sẽ chuyển về UTC)
- * @param {Object} options
- * @returns {Promise<Array>}
- */
 export const getUserAppointmentsByDate = async (userId, date, options = {}) => {
-  console.log(
-    `[DEBUG getUserAppointmentsByDate] userId=${userId}, date=${date}`,
-  );
-  if (!date) {
-    console.log(`[DEBUG] date is falsy, returning []`);
-    return [];
-  }
+  const boundary = getUtcBoundary(date);
+  if (!boundary) return [];
 
-  // Chuyển đổi date thành Date object UTC 00:00:00
-  let targetDate;
-  if (typeof date === "string") {
-    targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
-      console.log(`[DEBUG] Invalid date string, returning []`);
-      return [];
-    }
-    targetDate = new Date(
-      Date.UTC(
-        targetDate.getFullYear(),
-        targetDate.getMonth(),
-        targetDate.getDate(),
-      ),
-    );
-  } else if (date instanceof Date) {
-    targetDate = new Date(
-      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
-    );
-  } else {
-    console.log(`[DEBUG] date is not string or Date, returning []`);
-    return [];
-  }
-
-  const start = targetDate;
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
-  console.log(`[DEBUG] start=${start.toISOString()}, end=${end.toISOString()}`);
-
-  // Bước 1: Lấy tất cả Schedule có date trong [start, end)
-  const ScheduleModel = mongoose.model("Schedule");
-  const schedules = await ScheduleModel.find({
-    date: { $gte: start, $lt: end },
-  })
+  // 1. Tìm lịch làm việc (Schedules) trong ngày
+  const schedules = await mongoose
+    .model("Schedule")
+    .find({
+      date: { $gte: boundary.start, $lt: boundary.end },
+    })
     .select("_id")
     .lean();
-  console.log(`[DEBUG] Found ${schedules.length} schedules`);
 
   if (!schedules.length) return [];
-  const scheduleIds = schedules.map((s) => s._id);
 
-  // Bước 2: Lấy tất cả Slot thuộc các schedule đó
-  const SlotModel = mongoose.model("Slot");
-  const slots = await SlotModel.find({
-    scheduleId: { $in: scheduleIds },
-  })
+  // 2. Tìm các khung giờ (Slots) thuộc các lịch trên
+  const slots = await mongoose
+    .model("Slot")
+    .find({
+      scheduleId: { $in: schedules.map((s) => s._id) },
+    })
     .select("_id")
     .lean();
-  console.log(`[DEBUG] Found ${slots.length} slots`);
 
   if (!slots.length) return [];
-  const slotIds = slots.map((s) => s._id);
 
-  // Bước 3: Lấy Appointment với patientProfile và slot nằm trong slotIds
-  const filter = { slot: { $in: slotIds } };
-  const result = await _fetchAppointments(userId, filter, options);
-  console.log(`[DEBUG] Final appointments count: ${result.length}`);
-  return result;
+  // 3. Lấy danh sách cuộc hẹn
+  return _fetchAppointments(
+    userId,
+    { slot: { $in: slots.map((s) => s._id) } },
+    options,
+  );
 };
 
-
-/**
- * Lấy danh sách đơn thuốc của bệnh nhân (có thể lọc theo ngày)
- * @param {string|ObjectId} userId
- * @param {Object} options - { targetDate (string YYYY-MM-DD) }
- * @returns {Promise<Array>}
- */
 export const getUserPrescriptions = async (userId, options = {}) => {
-  console.log(`[DEBUG getUserPrescriptions] userId=${userId}, options=`, options);
   try {
-    let filter = { patientId: userId };
+    const filter = { patientId: userId };
+
     if (options.targetDate) {
-      const start = parseDateToUTC(options.targetDate);
-      const end = new Date(start);
-      end.setUTCDate(end.getUTCDate() + 1);
-      filter.createdAt = { $gte: start, $lt: end };
-      console.log(`[DEBUG] Filter by date range: ${start.toISOString()} - ${end.toISOString()}`);
+      const boundary = getUtcBoundary(options.targetDate);
+      if (boundary) {
+        filter.createdAt = { $gte: boundary.start, $lt: boundary.end };
+      }
     }
 
     const consultations = await MedicalConsultation.find(filter)
       .populate({
-        path: 'doctorId',
-        select: 'fullName',
+        path: "doctorId",
+        select: "fullName",
         populate: {
-          path: 'doctorProfile',
-          select: 'specialty consultationFee',
-          populate: { path: 'specialty', select: 'name' }
-        }
+          path: "doctorProfile",
+          select: "specialty consultationFee",
+          populate: { path: "specialty", select: "name" },
+        },
       })
       .sort({ createdAt: -1 })
       .lean();
 
-    console.log(`[DEBUG getUserPrescriptions] Found ${consultations.length} consultations`);
-    const formatted = consultations.map((consult) => {
-      const doctor = consult.doctorId || {};
-      const doctorProfile = doctor.doctorProfile || {};
-      const specialtyName = doctorProfile.specialty?.name || 'Chưa cập nhật';
-      const prescriptionText = (consult.prescription || []).map((drug) =>
-        `• **${drug.drugName}** – ${drug.dosage} – ${drug.instructions}${drug.duration ? ` (${drug.duration})` : ''}`
-      ).join('\n     ');
-      return {
-        id: consult._id,
-        date: consult.createdAt,
-        doctorName: doctor.fullName || 'Bác sĩ (không rõ)',
-        specialtyName,
-        diagnosis: consult.diagnosis || 'Chưa có chẩn đoán',
-        prescriptionItems: consult.prescription || [],
-        prescriptionText: prescriptionText || 'Không có thuốc',
-        instructions: consult.instructions || '',
-        followUpDate: consult.followUpDate || null
-      };
-    });
-    return formatted;
+    return consultations.map((consult) => ({
+      id: consult._id,
+      date: consult.createdAt,
+      doctorName: consult.doctorId?.fullName || "Bác sĩ (không rõ)",
+      specialtyName:
+        consult.doctorId?.doctorProfile?.specialty?.name || "Chưa cập nhật",
+      diagnosis: consult.diagnosis || "Chưa có chẩn đoán",
+      prescriptionItems: consult.prescription || [],
+      prescriptionText:
+        (consult.prescription || [])
+          .map(
+            (drug) =>
+              `• **${drug.drugName}** – ${drug.dosage} – ${drug.instructions}${drug.duration ? ` (${drug.duration})` : ""}`,
+          )
+          .join("\n     ") || "Không có thuốc",
+      instructions: consult.instructions || "",
+      followUpDate: consult.followUpDate || null,
+    }));
   } catch (error) {
-    console.error(`[getUserPrescriptions] DB error: ${error.message}`);
     return [];
   }
 };
 
-/**
- * Lấy danh sách hồ sơ bệnh án của người dùng
- * @param {string|ObjectId} userId
- * @returns {Promise<Array>} - Mảng các object đã format (che giấu thông tin nhạy cảm)
- */
 export const getUserMedicalRecords = async (userId) => {
-  console.log(`[DEBUG getUserMedicalRecords] userId=${userId}`);
   try {
     const records = await MedicalRecord.find({ user: userId, isDeleted: false })
       .sort({ createdAt: -1 })
       .lean();
 
-    console.log(`[DEBUG getUserMedicalRecords] Found ${records.length} records`);
+    return records.map((record) => {
+      // Ẩn CCCD
+      const cccdLen = record.cccd?.length || 0;
+      const cccdDisplay =
+        cccdLen >= 4
+          ? `*${record.cccd.slice(-4)}`
+          : record.cccd
+            ? "***"
+            : "Không có";
 
-    const formatted = records.map(record => {
-      // Che giấu CCCD: chỉ lấy 4 số cuối
-      let cccdDisplay = 'Không có';
-      if (record.cccd && record.cccd.length >= 4) {
-        cccdDisplay = `*${record.cccd.slice(-4)}`;
-      } else if (record.cccd) {
-        cccdDisplay = '***';
-      }
+      // Ẩn Bảo hiểm
+      const provider = record.insurance?.provider;
+      const policy = record.insurance?.policyNumber || "";
+      let insuranceDisplay = "Không có";
 
-      // Che giấu số bảo hiểm: chỉ lấy 4 số cuối
-      let insuranceDisplay = 'Không có';
-      if (record.insurance && record.insurance.provider) {
-        const policy = record.insurance.policyNumber || '';
-        const policySuffix = policy.length >= 4 ? `*${policy.slice(-4)}` : (policy ? '***' : '');
-        insuranceDisplay = `${record.insurance.provider}${policySuffix ? ` (số: ${policySuffix})` : ''}`;
+      if (provider) {
+        const policySuffix =
+          policy.length >= 4 ? `*${policy.slice(-4)}` : policy ? "***" : "";
+        insuranceDisplay = `${provider}${policySuffix ? ` (số: ${policySuffix})` : ""}`;
       }
 
       return {
         id: record._id,
         fullName: record.fullName,
-        phone: record.phone || 'Chưa cập nhật',
+        phone: record.phone || "Chưa cập nhật",
         dateOfBirth: record.dateOfBirth,
-        gender: record.gender === 'male' ? 'Nam' : (record.gender === 'female' ? 'Nữ' : 'Khác'),
+        gender:
+          record.gender === "male"
+            ? "Nam"
+            : record.gender === "female"
+              ? "Nữ"
+              : "Khác",
         cccd: cccdDisplay,
-        address: record.address || 'Chưa cập nhật',
-        bloodGroup: record.bloodGroup || 'Chưa rõ',
-        allergies: record.allergies?.length ? record.allergies.join(', ') : 'Không có',
+        address: record.address || "Chưa cập nhật",
+        bloodGroup: record.bloodGroup || "Chưa rõ",
+        allergies: record.allergies?.length
+          ? record.allergies.join(", ")
+          : "Không có",
         insurance: insuranceDisplay,
         isDefault: record.isDefault || false,
       };
     });
-    return formatted;
   } catch (error) {
-    console.error(`[getUserMedicalRecords] DB error: ${error.message}`);
     return [];
   }
 };

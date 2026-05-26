@@ -247,7 +247,7 @@ const intentBuilders = {
       `revenue_${ctx.timeRange}_${s.totalRevenue}`,
     );
   },
-  
+
   top_doctors_completed_appointments: (ctx) => {
     if (!ctx.topDoctors || ctx.topDoctors.length === 0) {
       return result(

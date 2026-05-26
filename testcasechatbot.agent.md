@@ -1,15 +1,18 @@
-Cho tôi hỏi cách đặt lịch khám bệnh?
-Tôi muốn đặt lịch với bs Đặng Thị Oanh
-Ở Bệnh viện Hữu nghị Đa khoa Nghệ An có bác sĩ khoa Nội tổng quát nào không?
-Bác sĩ Đặng Thị Oanh tốt không?
-Bs Trương Văn Nam thuộc chuyên khoa gì?
-Giá khám của bác sĩ Nguyễn Văn An là bao nhiêu tiền?
-bác sĩ Phạm Thị Dung có trong Bệnh viện Hữu nghị Đa khoa Nghệ An không
-Con chó nhà tôi bị nôn mửa bỏ ăn thì làm sao?
-Liệt kê cho tôi các lịch hẹn
-Ở Bệnh viện 115 nghệ an có bác sĩ chuyên khoa răng hàm mặt nào không?
-Lịch hẹn của tôi ngày 22/5/2026
-đơn thuốc của tôi
+
+1. Nhóm Intent Đặt lịch & Dịch vụ (Core Business)
+Intent: find_doctors_by_specialty (Đếm/Liệt kê bác sĩ theo khoa độc lập)
+Hướng dẫn tôi cách đặt lịch khám trên hệ thống.
+Tôi muốn đặt lịch hẹn với bác sĩ Nguyễn Văn An
+Intent: search_service (Tìm kiếm dịch vụ chung)
+Tìm bệnh viện ở khu vực phường Hưng Bình.
+Cho tôi xem danh sách chuyên khoa.
+2. Nhóm Intent Tra cứu Bác sĩ & Chuyên khoa (Entity Routing)
+Hệ thống có bao nhiêu bác sĩ chuyên khoa thần kinh
+Có bao nhiêu bác sĩ khoa tiêu hóa.
+Intent: find_doctors_by_clinic_specialty (Tìm bác sĩ theo cả Viện + Khoa)
+Tại Bệnh viện Hữu nghị Đa khoa Nghệ An có bác sĩ chuyên khoa nội tổng quát nào không?
+Cho tôi xem danh sách lịch hẹn ngày mai.
+Toa thuốc của tôi ngày hôm qua.
 
 admin
 
@@ -39,3 +42,9 @@ Uống sau khi ăn no
 Hạn chế mang vác nặng, tránh ngồi lâu quá 1 giờ Tập các bài kéo giãn cột
 sống nhẹ mỗi ngày Giữ ấm vùng thắt lưng, tránh nằm điều hòa lạnh trực tiếp
 Nếu đau tăng, tê lan xuống chân hoặc yếu chi → quay lại ngay bệnh viện để được khám lại và điều chỉnh điều trị
+
+
+Bệnh viện Sản Nhi Nghệ An
+Số 19 Tôn Thất Tùng, Hưng Dũng, Thành phố Vinh, Nghệ An
+TS.BS. Trần Văn Thiết
+Bệnh viện chuyên khoa tuyến tỉnh lớn nhất về Nhi và Sản Phụ Khoa tại địa bàn Nghệ An.

@@ -35,6 +35,7 @@ const AppointmentsPage = () => {
     status: null,
     dateRange: null,
     doctorId: null,
+    timePreset: "today",
   });
   const [pagination, setPagination] = useState({
     current: 1,
@@ -99,7 +100,25 @@ const AppointmentsPage = () => {
         { label: "Đã hủy", value: "cancelled" },
       ],
     },
-    { name: "dateRange", label: "Khoảng ngày", type: "date-range" },
+    {
+      name: "timePreset",
+      label: "Mốc thời gian",
+      type: "select",
+      options: [
+        { label: "Hôm nay", value: "today" },
+        { label: "Hôm qua", value: "yesterday" },
+        { label: "Ngày mai", value: "tomorrow" },
+        { label: "Tuần này", value: "this_week" },
+        { label: "Tuần trước", value: "last_week" },
+        { label: "Tuần sau", value: "next_week" },
+        { label: "Tháng này", value: "this_month" },
+        { label: "Tháng trước", value: "last_month" },
+        { label: "Tháng sau", value: "next_month" },
+        { label: "Toàn bộ", value: "all" },
+        { label: "Tùy chỉnh (Theo khoảng)", value: "custom" },
+      ],
+    },
+    { name: "dateRange", label: "Khoảng ngày (Tùy chỉnh)", type: "date-range" },
     ...(userRole === "admin"
       ? [
           {
@@ -116,13 +135,17 @@ const AppointmentsPage = () => {
   ];
 
   // --- API CALLS ---
+  // --- API CALLS ---
   const fetchAppointments = async () => {
     setLoading(true);
     try {
+      // [CODE CŨ Ở ĐÂY: const params = { ... }]
+      // [CODE MỚI TÍCH HỢP LOG BÊN DƯỚI]
       const params = {
         page: pagination.current,
         limit: pagination.pageSize,
         ...(filters.status && { status: filters.status }),
+        ...(filters.timePreset && { timePreset: filters.timePreset }), // CODE MỚI: Truyền preset
         ...(filters.dateRange?.[0] && {
           dateFrom: filters.dateRange[0].format("YYYY-MM-DD"),
         }),
@@ -133,6 +156,13 @@ const AppointmentsPage = () => {
         ...(userRole === "admin" &&
           filters.doctorId && { doctorId: filters.doctorId }),
       };
+
+      // CODE MỚI: Log debug xem Frontend gửi gì đi
+      console.log(
+        "[DEBUG Frontend - fetchAppointments] Params chuẩn bị gửi API:",
+        params,
+      );
+
       const res = await appointmentApi.getAppointments(params);
       setAppointments(res.appointments || []);
       setPagination((prev) => ({
@@ -217,11 +247,30 @@ const AppointmentsPage = () => {
           filterConfig={filterConfig}
           filters={filters}
           onFilterChange={(f) => {
-            setFilters(f);
+            const newFilters = { ...f };
+            // Xử lý loại trừ chéo giữa Preset và DatePicker
+            if (
+              newFilters.dateRange &&
+              newFilters.dateRange !== filters.dateRange
+            ) {
+              newFilters.timePreset = "custom"; // Chọn DatePicker thì nhường quyền cho DatePicker
+            } else if (
+              newFilters.timePreset &&
+              newFilters.timePreset !== filters.timePreset
+            ) {
+              newFilters.dateRange = null; // Chọn Preset thì xóa DatePicker
+            }
+            setFilters(newFilters);
             setPagination((p) => ({ ...p, current: 1 }));
           }}
           onFilterClear={() => {
-            setFilters({ status: null, dateRange: null, doctorId: null });
+            // Khi nhấn Xóa tất cả, mặc định trả hệ thống về Hôm nay theo nghiệp vụ
+            setFilters({
+              status: null,
+              dateRange: null,
+              doctorId: null,
+              timePreset: "today",
+            });
             setPagination((p) => ({ ...p, current: 1 }));
           }}
         />
@@ -262,6 +311,6 @@ const AppointmentsPage = () => {
       </div>
     </div>
   );
-};
+};;
 
 export default AppointmentsPage;

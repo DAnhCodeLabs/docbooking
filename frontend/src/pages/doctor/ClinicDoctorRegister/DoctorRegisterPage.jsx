@@ -25,7 +25,7 @@ import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { specialtyService } from "../../admin/ManageCategories/specialtyService";
 import { clinicLeadService } from "./clinicLeadService";
-import ClinicRegisterForm from "./components/ClinicRegisterForm"; // import form mới
+import ClinicRegisterForm from "./components/ClinicRegisterForm";
 import DoctorContactPanel from "./components/DoctorContactPanel";
 import { doctorService } from "./doctorService";
 
@@ -40,10 +40,7 @@ const qualificationSchema = z.object({
     .string()
     .refine((val) => /^\d{4}$/.test(val), "Năm phải là 4 số")
     .transform(Number)
-    .refine(
-      (val) => val >= 1900 && val <= new Date().getFullYear(),
-      "Năm không hợp lệ",
-    ),
+    .refine((val) => val >= 1900, "Năm không hợp lệ"),
 });
 
 const doctorRegisterSchema = z

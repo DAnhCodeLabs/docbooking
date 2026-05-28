@@ -25,7 +25,6 @@ export const getDoctorApplications = async (query) => {
     if (Array.isArray(statusParam)) {
       filter.status = { $in: statusParam };
     } else {
-      // Nếu status là "pending", lấy cả pending và pending_admin_approval
       if (statusParam === "pending") {
         filter.status = { $in: ["pending", "pending_admin_approval"] };
       } else {
@@ -33,26 +32,30 @@ export const getDoctorApplications = async (query) => {
       }
     }
   } else {
-    // Mặc định: lấy cả pending và pending_admin_approval
     filter.status = { $in: ["pending", "pending_admin_approval"] };
   }
 
-  // Xây dựng điều kiện populate user với match nếu có search
-  let populateMatch = {};
+  // Tái thiết kế bộ lọc tìm kiếm text-search thích ứng cả trạng thái trước và sau khi kích hoạt tài khoản
   if (search) {
-    populateMatch = {
+    const matchedUsers = await User.find({
       $or: [
         { fullName: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
       ],
-    };
+    }).select("_id");
+    const userIds = matchedUsers.map((u) => u._id);
+
+    filter.$or = [
+      { user: { $in: userIds } },
+      { "applicantInfo.fullName": { $regex: search, $options: "i" } },
+      { "applicantInfo.email": { $regex: search, $options: "i" } },
+    ];
   }
 
   let dbQuery = DoctorProfile.find(filter)
     .populate({
       path: "user",
       select: "fullName email phone avatar",
-      match: populateMatch,
     })
     .populate("specialty", "name")
     .populate("clinicId", "clinicName address")
@@ -61,13 +64,24 @@ export const getDoctorApplications = async (query) => {
     .limit(limit);
 
   const applications = await dbQuery.exec();
-
-  // Không lọc bỏ profile có user null, giữ nguyên để admin thấy
-  // Nhưng vẫn đánh dấu để frontend hiển thị "Chưa liên kết tài khoản"
   const total = await DoctorProfile.countDocuments(filter);
 
-  // Trả về tất cả applications, kể cả user null
-  return { applications, total };
+  // Áp dụng kỹ thuật Virtual Injector để đồng bộ hóa giao diện quản trị cũ, triệt tiêu side-effects
+  const normalizedApplications = applications.map((app) => {
+    const appObj = app.toObject();
+    if (!appObj.user && appObj.applicantInfo) {
+      appObj.user = {
+        fullName: appObj.applicantInfo.fullName,
+        email: appObj.applicantInfo.email,
+        phone: appObj.applicantInfo.phone,
+        avatar: appObj.applicantInfo.avatar,
+        isProvisional: true, // Cờ đánh dấu tài khoản ảo phục vụ frontend phân biệt đồ họa hiển thị
+      };
+    }
+    return appObj;
+  });
+
+  return { applications: normalizedApplications, total };
 };
 export const getDoctorApplicationById = async (profileId) => {
   const profile = await DoctorProfile.findById(profileId)
@@ -96,178 +110,180 @@ export const processDoctorApplication = async (
   if (!profile)
     throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy hồ sơ bác sĩ.");
 
-  // Sửa điều kiện: chỉ cho phép xử lý hồ sơ đang ở trạng thái "pending_admin_approval"
+  // Kiểm soát trạng thái chặt chẽ theo phân loại loại hình công tác
   const isClinicDoctor = !!profile.clinicId;
   if (isClinicDoctor && profile.status !== "pending_admin_approval") {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      `Hồ sơ này đang ở trạng thái ${profile.status}, không thể xử lý. Bác sĩ thuộc phòng khám cần được xác nhận bởi phòng khám trước.`,
+      `Hồ sơ này đang ở trạng thái ${profile.status}, không thể xử lý. Bác sĩ trực thuộc phòng khám bắt buộc cần được cơ sở xác nhận trước.`,
     );
   }
   if (!isClinicDoctor && profile.status !== "pending") {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
-      `Hồ sơ này đang ở trạng thái ${profile.status}, không thể xử lý.`,
+      `Hồ sơ độc lập này đang ở trạng thái ${profile.status}, không thể xử lý xử duyệt hành động.`,
     );
   }
 
-  // 2. Tìm tài khoản User liên kết
-  const user = await User.findById(profile.user._id);
-  if (!user)
-    throw new ApiError(
-      StatusCodes.NOT_FOUND,
-      "Không tìm thấy tài khoản liên kết với hồ sơ này.",
-    );
+  // ================================================================
+  // TRƯỜNG HỢP 1: ADMIN PHÊ DUYỆT (KÍCH HOẠT TÀI KHOẢN VÀ CẤP PHÁT QUYỀN TRUY CẬP)
+  // ================================================================
+  if (action === "approve") {
+    const applicant = profile.applicantInfo;
+    if (!applicant) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Hồ sơ không có thông tin ứng viên hợp lệ để khởi tạo tài khoản.",
+      );
+    }
 
-  // Lưu tạm dữ liệu cũ để Rollback cho luồng DUYỆT (Approve)
-  const oldUserObj = {
-    password: user.password,
-    status: user.status,
-    emailVerified: user.emailVerified,
-    requiresPasswordChange: user.requiresPasswordChange,
-  };
-  const oldProfileObj = {
-    status: profile.status,
-    isVerified: profile.isVerified,
-    verifiedBy: profile.verifiedBy,
-  };
+    const plainPassword = crypto.randomBytes(10).toString("hex");
 
-  try {
-    if (action === "approve") {
-      // ================================================================
-      // TRƯỜNG HỢP 1: ADMIN BẤM DUYỆT HỒ SƠ (ROLLBACK THỦ CÔNG)
-      // ================================================================
-      const plainPassword = crypto.randomBytes(10).toString("hex");
+    // ĐỀ PHÒNG ĐIỂM MÙ XUNG ĐỘT (UPSERT ROLE): Nếu email đã đăng ký tài khoản bệnh nhân trước đó
+    let user = await User.findOne({ email: applicant.email });
+    let isNewUserCreated = false;
+    let oldUserSnapshot = null;
 
-      // Lưu trạng thái cũ để rollback nếu cần
-      const oldUserObj = {
-        password: user.password,
+    if (user) {
+      // Sao lưu trạng thái cũ để Rollback thủ công nếu luồng sau lỗi
+      oldUserSnapshot = {
+        role: user.role,
         status: user.status,
         emailVerified: user.emailVerified,
         requiresPasswordChange: user.requiresPasswordChange,
       };
-      const oldProfileObj = {
-        status: profile.status,
-        isVerified: profile.isVerified,
-        verifiedBy: profile.verifiedBy,
-      };
+      // Tiến hành nâng cấp đặc quyền trực tiếp trên tài khoản cũ thành Bác sĩ
+      user.role = "doctor";
+      user.status = "active";
+      user.emailVerified = true;
+      user.requiresPasswordChange = true;
+      await user.save();
+    } else {
+      // Khởi tạo tài khoản hoàn toàn mới từ dữ liệu thô đã đóng băng trong hồ sơ
+      user = await User.create({
+        email: applicant.email,
+        password: plainPassword,
+        fullName: applicant.fullName,
+        phone: applicant.phone,
+        avatar: applicant.avatar,
+        role: "doctor",
+        status: "active",
+        emailVerified: true,
+        requiresPasswordChange: true,
+      });
+      isNewUserCreated = true;
+    }
 
-      try {
-        // Cập nhật user
-        user.password = plainPassword;
-        user.status = "active";
-        user.emailVerified = true;
-        user.requiresPasswordChange = true;
-        await user.save();
+    const oldProfileSnapshot = {
+      status: profile.status,
+      isVerified: profile.isVerified,
+      verifiedBy: profile.verifiedBy,
+      user: profile.user,
+    };
 
-        // Cập nhật profile
-        profile.status = "active";
-        profile.isVerified = true;
-        profile.verifiedAt = new Date();
-        profile.verifiedBy = adminId;
-        await profile.save();
-
-        // Ghi audit log
-        await AuditLog.create({
-          action: "APPROVE_DOCTOR_PROFILE",
-          status: "SUCCESS",
-          userId: adminId,
-          ipAddress,
-          userAgent,
-          details: { doctorUserId: user._id, doctorEmail: user.email },
-        });
-
-        // Gửi email thông báo
-        await sendDoctorApprovalEmail(user.email, plainPassword);
-      } catch (error) {
-        // Rollback thủ công: khôi phục dữ liệu cũ
-        Object.assign(user, oldUserObj);
-        await user.save().catch(() => {});
-        Object.assign(profile, oldProfileObj);
-        await profile.save().catch(() => {});
-
-        logger.error(`Lỗi khi duyệt hồ sơ bác sĩ: ${error.message}`);
-        throw new ApiError(
-          StatusCodes.INTERNAL_SERVER_ERROR,
-          "Có lỗi xảy ra khi duyệt hồ sơ. Vui lòng thử lại.",
-        );
-      }
-    } else if (action === "reject") {
-      // ================================================================
-      // TRƯỜNG HỢP 2: ADMIN TỪ CHỐI HỒ SƠ (SOFT DELETE)
-      // Giữ lại dữ liệu, chỉ đánh dấu trạng thái rejected
-      // ================================================================
-
-      // Cập nhật trạng thái DoctorProfile
-      profile.status = "rejected";
-      profile.rejectionReason = reason; // cần thêm field này? Nếu model chưa có thì thêm
-      profile.rejectedAt = new Date();
-      profile.rejectedBy = adminId;
+    try {
+      // Cập nhật liên kết khóa ngoại và đổi trạng thái hồ sơ hoạt động
+      profile.user = user._id;
+      profile.status = "active";
+      profile.isVerified = true;
+      profile.verifiedAt = new Date();
+      profile.verifiedBy = adminId;
       await profile.save();
 
-      // User giữ nguyên trạng thái inactive (không kích hoạt), có thể thêm rejected flag nếu muốn
-      // Không cần thay đổi user
-
-      // Ghi audit log
       await AuditLog.create({
-        action: "REJECT_DOCTOR_PROFILE",
+        action: "APPROVE_DOCTOR_PROFILE",
         status: "SUCCESS",
         userId: adminId,
         ipAddress,
         userAgent,
-        details: {
-          doctorId: user._id,
-          doctorEmail: user.email,
-          reason: reason,
-        },
+        details: { doctorUserId: user._id, doctorEmail: user.email },
       });
 
-      // Gửi email thông báo từ chối
-      await sendDoctorRejectionEmail(user.email, reason);
-
-      // Xóa ảnh trên Cloudinary (tùy chọn, vẫn nên xóa để tiết kiệm chi phí)
-      try {
-        if (user.avatar) {
-          await deleteFromCloudinary(user.avatar);
-        }
-        if (profile.documents && profile.documents.length > 0) {
-          for (const doc of profile.documents) {
-            if (doc.url) {
-              await deleteFromCloudinary(doc.url);
-            }
-          }
-        }
-      } catch (cloudinaryError) {
-        // Chỉ log lỗi, không ảnh hưởng đến nghiệp vụ chính
-        logger.error(
-          `Lỗi xóa ảnh Cloudinary khi reject doctor ${user.email}: ${cloudinaryError.message}`,
-        );
+      // Phát hành email chứa mật khẩu đăng nhập ngẫu nhiên sang Bác sĩ
+      await sendDoctorApprovalEmail(user.email, plainPassword);
+    } catch (error) {
+      // CHIẾN LƯỢC MANUAL ROLLBACK TOÀN VẸN: Khôi phục sạch sẽ dữ liệu nếu gián đoạn mạng hoặc Mail Server chết
+      if (isNewUserCreated && user) {
+        await User.deleteOne({ _id: user._id }).catch(() => {});
+      } else if (user && oldUserSnapshot) {
+        Object.assign(user, oldUserSnapshot);
+        await user.save().catch(() => {});
       }
-    }
-  } catch (error) {
-    // Kỹ thuật Manual Rollback (Chỉ áp dụng khi đang Duyệt mà bị lỗi)
-    if (action === "approve") {
-      Object.assign(user, oldUserObj);
-      await user.save().catch(() => {});
-      Object.assign(profile, oldProfileObj);
+
+      Object.assign(profile, oldProfileSnapshot);
       await profile.save().catch(() => {});
+
+      logger.error(
+        `Lỗi hệ thống trong luồng duyệt hồ sơ bác sĩ: ${error.message}`,
+      );
+      throw new ApiError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Đã xảy ra sự cố trong quá trình duyệt cấp tài khoản. Hệ thống tự động rollback an toàn. Vui lòng thử lại.",
+      );
     }
-
-    // Nếu hành động là "Từ chối" mà bị lỗi, ta không cần rollback vì dữ liệu cũ vẫn nằm đó, chưa bị xóa đi.
-
-    logger.error(`Lỗi khi xử lý hồ sơ bác sĩ: ${error.message}`);
-    throw new ApiError(
-      StatusCodes.INTERNAL_SERVER_ERROR,
-      "Có lỗi xảy ra khi xử lý hồ sơ. Vui lòng thử lại.",
-    );
   }
 
-  logger.info(`Admin ${adminId} đã ${action} hồ sơ của ${user.email}`);
+  // ================================================================
+  // TRƯỜNG HỢP 2: ADMIN TỪ CHỐI HỒ SƠ (TỪ CHỐI TRÊN DỮ LIỆU THÔ)
+  // ================================================================
+  else if (action === "reject") {
+    const targetEmail = profile.user
+      ? profile.user.email
+      : profile.applicantInfo?.email;
+    const targetAvatar = profile.user
+      ? profile.user.avatar
+      : profile.applicantInfo?.avatar;
+
+    profile.status = "rejected";
+    profile.rejectionReason = reason;
+    profile.rejectedAt = new Date();
+    profile.rejectedBy = adminId;
+    await profile.save();
+
+    await AuditLog.create({
+      action: "REJECT_DOCTOR_PROFILE",
+      status: "SUCCESS",
+      userId: adminId,
+      ipAddress,
+      userAgent,
+      details: {
+        doctorId: profile.user?._id || null,
+        doctorEmail: targetEmail,
+        reason: reason,
+      },
+    });
+
+    if (targetEmail) {
+      await sendDoctorRejectionEmail(targetEmail, reason);
+    }
+
+    // Tiến hành giải phóng tài nguyên lưu trữ rác trên Cloudinary ngay lập tức
+    try {
+      if (targetAvatar) {
+        await deleteFromCloudinary(targetAvatar);
+      }
+      if (profile.documents && profile.documents.length > 0) {
+        for (const doc of profile.documents) {
+          if (doc.url) {
+            await deleteFromCloudinary(doc.url);
+          }
+        }
+      }
+    } catch (cloudinaryError) {
+      logger.error(
+        `Lỗi giải phóng Cloudinary khi từ chối hồ sơ bác sĩ ${targetEmail}: ${cloudinaryError.message}`,
+      );
+    }
+  }
+
+  logger.info(
+    `Quản trị viên ${adminId} đã xử lý hành động [${action}] đối với hồ sơ ứng viên.`,
+  );
 
   return {
     message:
       action === "approve"
-        ? "Đã DUYỆT hồ sơ thành công. Mật khẩu đã được sinh ra và gửi qua Email."
-        : "Đã TỪ CHỐI hồ sơ và xóa dữ liệu thành công. Đã gửi thông báo qua Email.",
+        ? "Đã DUYỆT hồ sơ thành công. Tài khoản User chính thức đã được thiết lập và cấp mật khẩu qua Email."
+        : "Đã TỪ CHỐI hồ sơ đăng ký thành công. Hệ thống đã gửi email thông báo giải trình lý do.",
   };
 };

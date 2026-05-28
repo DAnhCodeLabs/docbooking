@@ -4,7 +4,7 @@ Intent: find_doctors_by_specialty (Đếm/Liệt kê bác sĩ theo khoa độc l
 Hướng dẫn tôi cách đặt lịch khám trên hệ thống.
 Tôi muốn đặt lịch hẹn với bác sĩ Nguyễn Văn An
 Intent: search_service (Tìm kiếm dịch vụ chung)
-Tìm bệnh viện ở khu vực phường Hưng Bình.
+Tìm bệnh viện ở khu vực vinh nghệ an.
 Cho tôi xem danh sách chuyên khoa.
 2. Nhóm Intent Tra cứu Bác sĩ & Chuyên khoa (Entity Routing)
 Hệ thống có bao nhiêu bác sĩ chuyên khoa thần kinh
@@ -48,3 +48,5 @@ Bệnh viện Sản Nhi Nghệ An
 Số 19 Tôn Thất Tùng, Hưng Dũng, Thành phố Vinh, Nghệ An
 TS.BS. Trần Văn Thiết
 Bệnh viện chuyên khoa tuyến tỉnh lớn nhất về Nhi và Sản Phụ Khoa tại địa bàn Nghệ An.
+
+

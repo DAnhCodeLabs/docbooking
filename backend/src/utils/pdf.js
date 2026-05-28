@@ -249,7 +249,7 @@ export const generateContractPDF = async (clinicData) => {
             <div class="sign-title">ĐẠI DIỆN BÊN A</div>
             <div class="sign-subtitle">(Ký số / Đóng dấu pháp nhân)</div>
             <br/><br/><br/>
-            <div><strong>Lê Đình Anh</strong></div>
+            <div><strong>DocGo</strong></div>
           </td>
         </tr>
       </table>

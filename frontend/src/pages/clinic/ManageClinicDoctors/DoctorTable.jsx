@@ -23,18 +23,16 @@ const DoctorTable = ({
       render: (_, record) => (
         <div className="flex items-center gap-3">
           <Avatar
-            src={record.user?.avatar}
-            icon={!record.user?.avatar && <UserOutlined />}
+            src={record.user.avatar}
+            icon={!record.user.avatar && <UserOutlined />}
             className="border-gray-200! border-solid! border!"
             size="large"
           />
           <div className="flex flex-col">
             <span className="font-semibold text-gray-800">
-              {record.user?.fullName || "Đang cập nhật..."}
+              {record.user.fullName}
             </span>
-            <span className="text-xs text-gray-500">
-              {record.user?.email || "Chưa có thông tin"}
-            </span>
+            <span className="text-xs text-gray-500">{record.user.email}</span>
           </div>
         </div>
       ),
@@ -123,7 +121,7 @@ const DoctorTable = ({
             showSizeChanger: true,
             onChange: (page, pageSize) =>
               setPagination({ ...pagination, current: page, pageSize }),
-            className: "pr-4!",
+            className: "pr-4!", // Cách lề phải một chút cho đẹp
           }}
           className="whitespace-nowrap!"
         />

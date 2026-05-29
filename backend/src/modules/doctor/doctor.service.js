@@ -22,6 +22,7 @@ import {
 } from "../../utils/email.js";
 import logger from "../../utils/logger.js";
 import * as clinicLeadService from "../clinicLead/clinicLead.service.js";
+import * as reviewService from "../review/review.service.js";
 import * as scheduleService from "../schedule/schedule.service.js";
 
 dayjs.extend(utc);
@@ -49,27 +50,13 @@ export const submitDoctorOnboarding = async (
     customClinicName,
   } = data;
 
-  // 1. Kiểm tra chống trùng lặp email ở cả bảng User và hồ sơ đang chờ duyệt
+  // 1. Kiểm tra email
   const existingUser = await User.findOne({ email });
-  if (existingUser && existingUser.role === "doctor") {
-    throw new ApiError(
-      StatusCodes.CONFLICT,
-      "Tài khoản bác sĩ sử dụng email này đã tồn tại trên hệ thống.",
-    );
+  if (existingUser) {
+    throw new ApiError(StatusCodes.CONFLICT, "Email này đã tồn tại.");
   }
 
-  const existingPendingProfile = await DoctorProfile.findOne({
-    "applicantInfo.email": email,
-    status: { $in: ["pending", "pending_admin_approval"] },
-  });
-  if (existingPendingProfile) {
-    throw new ApiError(
-      StatusCodes.CONFLICT,
-      "Hồ sơ đăng ký với email này đang trong quá trình chờ xét duyệt.",
-    );
-  }
-
-  // 2. Kiểm tra phòng khám liên kết
+  // 2. Kiểm tra clinic nếu có
   if (clinicId) {
     const clinic = await ClinicLead.findOne({
       _id: clinicId,
@@ -83,11 +70,12 @@ export const submitDoctorOnboarding = async (
     }
   }
 
-  // 3. Upload tài nguyên media lên Cloudinary
+  // 3. Upload files
   let finalAvatarUrl = null;
   let finalUploadedDocuments = [];
 
   try {
+    // Avatar
     if (files.avatarUrl && files.avatarUrl[0]) {
       finalAvatarUrl = await uploadToCloudinary(
         files.avatarUrl[0],
@@ -100,6 +88,7 @@ export const submitDoctorOnboarding = async (
       );
     }
 
+    // Documents
     if (files.uploadedDocuments && files.uploadedDocuments.length > 0) {
       const docPromises = files.uploadedDocuments.map(async (file) => {
         const url = await uploadToCloudinary(file, "doctor_profiles");
@@ -113,6 +102,7 @@ export const submitDoctorOnboarding = async (
       );
     }
   } catch (error) {
+    // Rollback nếu lỗi upload
     if (finalAvatarUrl) await deleteFromCloudinary(finalAvatarUrl);
     for (const doc of finalUploadedDocuments) {
       if (doc.url) await deleteFromCloudinary(doc.url);
@@ -120,8 +110,8 @@ export const submitDoctorOnboarding = async (
     throw error;
   }
 
-  // 4. CHỈ tạo duy nhất hồ sơ DoctorProfile, trì hoãn tạo User
-  let newProfile = null;
+  // 4. Tạo user và profile
+  let newUser = null;
   try {
     let parsedQualifications = qualifications;
     if (typeof qualifications === "string") {
@@ -132,14 +122,18 @@ export const submitDoctorOnboarding = async (
       }
     }
 
-    newProfile = await DoctorProfile.create({
-      user: undefined, // Không cấp User ID tại thời điểm này
-      applicantInfo: {
-        email,
-        fullName,
-        phone,
-        avatar: finalAvatarUrl,
-      },
+    newUser = await User.create({
+      email,
+      fullName,
+      phone,
+      avatar: finalAvatarUrl,
+      role: "doctor",
+      status: "inactive",
+      emailVerified: false,
+    });
+
+    await DoctorProfile.create({
+      user: newUser._id,
       specialty,
       experience,
       consultationFee,
@@ -153,33 +147,32 @@ export const submitDoctorOnboarding = async (
       isVerified: false,
     });
 
-    // Tạo nhật ký hệ thống độc lập
     await AuditLog.create({
-      userId: null, // Chưa có user kích hoạt thao tác
+      userId: newUser._id,
       action: "SUBMIT_DOCTOR_PROFILE",
       status: "SUCCESS",
       ipAddress,
       userAgent,
-      details: { email, licenseNumber, profileId: newProfile._id },
+      details: { email, licenseNumber },
     });
   } catch (error) {
+    // Rollback DB và Cloudinary
+    if (newUser) await User.deleteOne({ _id: newUser._id });
     if (finalAvatarUrl) await deleteFromCloudinary(finalAvatarUrl);
     for (const doc of finalUploadedDocuments) {
       if (doc.url) await deleteFromCloudinary(doc.url);
     }
-    logger.error(`Lỗi khi lưu hồ sơ bác sĩ độc lập: ${error.message}`);
+    logger.error(`Lỗi khi tạo hồ sơ bác sĩ: ${error.message}`);
     throw new ApiError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Có lỗi xảy ra khi lưu trữ hồ sơ đăng ký.",
+      "Có lỗi xảy ra khi lưu hồ sơ.",
     );
   }
 
-  logger.info(
-    `Đăng ký hồ sơ bác sĩ thành công (Chờ duyệt tài khoản) cho email: ${email}`,
-  );
+  logger.info(`Doctor onboarding submitted successfully for email: ${email}`);
   return {
     message:
-      "Nộp hồ sơ thành công! Đội ngũ quản trị nền tảng sẽ xét duyệt và cấp tài khoản qua Email.",
+      "Nộp hồ sơ thành công! Đội ngũ quản trị sẽ xét duyệt và liên hệ lại.",
   };
 };
 
@@ -649,7 +642,8 @@ export const getClinicDoctors = async (userId, query) => {
     $or: [{ clinicId: clinic._id }, { customClinicName: clinic.clinicName }],
   };
 
-  // NÂNG CẤP TÌM KIẾM: Quét đồng thời trên bảng User (đã duyệt) và trường dữ liệu thô applicantInfo (chưa duyệt)
+  // Xử lý search: tìm user có fullName/email/phone chứa search
+  let userIds = [];
   if (query.search) {
     const users = await User.find({
       $or: [
@@ -658,14 +652,8 @@ export const getClinicDoctors = async (userId, query) => {
         { phone: { $regex: query.search, $options: "i" } },
       ],
     }).select("_id");
-    const userIds = users.map((u) => u._id);
-
-    filter.$or = [
-      { user: { $in: userIds } },
-      { "applicantInfo.fullName": { $regex: query.search, $options: "i" } },
-      { "applicantInfo.email": { $regex: query.search, $options: "i" } },
-      { "applicantInfo.phone": { $regex: query.search, $options: "i" } },
-    ];
+    userIds = users.map((u) => u._id);
+    filter.user = { $in: userIds };
   }
 
   if (query.status) filter.status = query.status;
@@ -680,32 +668,13 @@ export const getClinicDoctors = async (userId, query) => {
     .populate("specialty", "name");
 
   const total = await DoctorProfile.countDocuments(filter);
+
   const page = parseInt(query.page, 10) || 1;
   const limit = parseInt(query.limit, 10) || 10;
 
-  // FALLBACK MAPPING PATTERN: Khôi phục cấu trúc Json ảo để Frontend hiển thị mượt mà không bị Crash lỗi undefined
-  const normalizedDoctors = doctors.map((doc) => {
-    const docObj = doc.toObject();
-    if (!docObj.user && docObj.applicantInfo) {
-      docObj.user = {
-        fullName: docObj.applicantInfo.fullName,
-        email: docObj.applicantInfo.email,
-        phone: docObj.applicantInfo.phone,
-        avatar: docObj.applicantInfo.avatar,
-        status: "inactive", // Trạng thái giả định để UI nhận diện tài khoản chưa kích hoạt
-      };
-    }
-    return docObj;
-  });
-
-  return {
-    doctors: normalizedDoctors,
-    total,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-  };
+  return { doctors, total, page, limit, totalPages: Math.ceil(total / limit) };
 };
+
 export const approveDoctorByClinic = async (
   userId,
   doctorId,
@@ -726,12 +695,7 @@ export const approveDoctorByClinic = async (
   if (!doctor)
     throw new ApiError(StatusCodes.NOT_FOUND, "Không tìm thấy bác sĩ.");
 
-  // Đoạn mã kiểm tra đặc quyền phòng khám quản lý bác sĩ
-  const isOwnDoctor =
-    (doctor.clinicId && doctor.clinicId.toString() === clinic._id.toString()) ||
-    (doctor.customClinicName && doctor.customClinicName === clinic.clinicName);
-
-  if (!isOwnDoctor) {
+  if (!isDoctorBelongsToClinic(doctor, clinic)) {
     throw new ApiError(
       StatusCodes.FORBIDDEN,
       "Bạn không có quyền duyệt bác sĩ này.",
@@ -749,7 +713,7 @@ export const approveDoctorByClinic = async (
     { _id: doctorId, status: "pending" },
     {
       status: "pending_admin_approval",
-      verifiedBy: userId,
+      verifiedBy: userId, // ghi nhận ai đã xác nhận từ clinic
       verifiedAt: new Date(),
     },
     { new: true },
@@ -757,14 +721,6 @@ export const approveDoctorByClinic = async (
 
   if (!updated)
     throw new ApiError(StatusCodes.BAD_REQUEST, "Không thể xác nhận bác sĩ.");
-
-  // Trích xuất thông tin linh hoạt thông qua cơ chế Fallback
-  const targetName = doctor.user
-    ? doctor.user.fullName
-    : doctor.applicantInfo?.fullName;
-  const targetEmail = doctor.user
-    ? doctor.user.email
-    : doctor.applicantInfo?.email;
 
   await AuditLog.create({
     userId,
@@ -774,28 +730,26 @@ export const approveDoctorByClinic = async (
     userAgent,
     details: {
       doctorId: doctor._id,
-      doctorName: targetName,
+      doctorName: doctor.user.fullName,
       clinicName: clinic.clinicName,
     },
   });
 
   try {
-    if (targetEmail) {
-      await sendDoctorClinicApproved(
-        targetEmail,
-        targetName,
-        clinic.clinicName,
-      );
-    }
+    await sendDoctorClinicApproved(
+      doctor.user.email,
+      doctor.user.fullName,
+      clinic.clinicName,
+    );
   } catch (error) {
     logger.error(
-      `Gửi email thông báo xác nhận bác sĩ từ phòng khám thất bại: ${error.message}`,
+      `Gửi email thông báo xác nhận bác sĩ thất bại: ${error.message}`,
     );
   }
 
   return {
     message:
-      "Đã xác nhận nhân sự phòng khám. Hồ sơ đã được đẩy lên hệ thống nền tảng để kiểm duyệt và cấp tài khoản.",
+      "Đã xác nhận hồ sơ bác sĩ. Hồ sơ sẽ được chuyển đến nền tảng để kiểm duyệt lần cuối.",
   };
 };
 
@@ -983,9 +937,7 @@ export const getDoctorIdsByClinic = async (clinicId, clinicName) => {
     "user",
   );
   // Trả về mảng string để so sánh dễ dàng
-  return doctorProfiles
-    .filter((dp) => dp.user != null)
-    .map((dp) => dp.user.toString());
+  return doctorProfiles.map((dp) => dp.user.toString());
 };
 
 /**

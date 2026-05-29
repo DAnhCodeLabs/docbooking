@@ -276,6 +276,7 @@ const DoctorRegisterPage = () => {
                         <Col xs={24} sm={12}>
                           <Form.Item
                             label="Số điện thoại"
+                            required
                             validateStatus={errors.phone ? "error" : ""}
                             help={errors.phone?.message}
                           >
@@ -324,6 +325,7 @@ const DoctorRegisterPage = () => {
                       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 mb-6">
                         <Form.Item
                           label="Ảnh chân dung (Avatar)"
+                          required
                           className="mb-0"
                         >
                           <UploadFile
@@ -436,6 +438,7 @@ const DoctorRegisterPage = () => {
                         <Col xs={24} sm={12}>
                           <Form.Item
                             label="Số năm kinh nghiệm"
+                            required
                             validateStatus={errors.experience ? "error" : ""}
                             help={errors.experience?.message}
                           >
@@ -458,6 +461,7 @@ const DoctorRegisterPage = () => {
                         <Col xs={24} sm={12}>
                           <Form.Item
                             label="Phí khám tư vấn (VND)"
+                            required
                             validateStatus={
                               errors.consultationFee ? "error" : ""
                             }
@@ -483,6 +487,7 @@ const DoctorRegisterPage = () => {
 
                       <Form.Item
                         label="Số giấy phép hành nghề (GPHN)"
+                        required
                         validateStatus={errors.licenseNumber ? "error" : ""}
                         help={errors.licenseNumber?.message}
                       >

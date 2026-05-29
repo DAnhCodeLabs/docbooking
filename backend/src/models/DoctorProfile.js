@@ -27,43 +27,13 @@ const activityImageSchema = new mongoose.Schema(
   { _id: false },
 );
 
-// Sub-schema lưu trữ thông tin tạm thời của ứng viên trước khi được tạo tài khoản User chính thức
-const applicantInfoSchema = new mongoose.Schema(
-  {
-    fullName: {
-      type: String,
-      required: [true, "Họ tên ứng viên là bắt buộc"],
-      trim: true,
-    },
-    email: {
-      type: String,
-      required: [true, "Email ứng viên là bắt buộc"],
-      lowercase: true,
-      trim: true,
-    },
-    phone: {
-      type: String,
-      trim: true,
-    },
-    avatar: {
-      type: String,
-      default: "",
-    },
-  },
-  { _id: false },
-);
-
 const doctorProfileSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
       unique: true,
-      sparse: true, // SỬA ĐỔI CHIẾN LƯỢC: Cho phép nhiều bản ghi có giá trị null/undefined mà không vi phạm Unique Index
-    },
-    applicantInfo: {
-      type: applicantInfoSchema,
-      default: null, // Thêm cấu trúc lưu trữ thông tin thô khi chưa duyệt
     },
     specialty: {
       type: mongoose.Schema.Types.ObjectId,
@@ -125,6 +95,7 @@ const doctorProfileSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // [BẢN VÁ P1]: Bỏ default: [] để tận dụng Sparse Indexing của MongoDB Atlas
     embedding: {
       type: [Number],
       default: undefined,
@@ -135,7 +106,7 @@ const doctorProfileSchema = new mongoose.Schema(
   },
 );
 
-// MIDDLEWARE: Cập nhật cơ chế sinh Vector Embedding hỗ trợ cả trạng thái chưa có User chính thức
+// MIDDLEWARE: Sửa lỗi đồng bộ/bất đồng bộ bằng cách loại bỏ callback next() trong async hook
 doctorProfileSchema.pre("save", async function () {
   if (
     this.isModified("bio") ||
@@ -154,19 +125,17 @@ doctorProfileSchema.pre("save", async function () {
       }
 
       let doctorName = "Chưa rõ";
-      // FALLBACK LOGIC: Nếu đã có user thì lấy từ User, nếu chưa có thì lấy từ applicantInfo thô
       if (this.user) {
         const userDoc = await mongoose
           .model("User")
           .findById(this.user)
           .select("fullName");
         if (userDoc) doctorName = userDoc.fullName;
-      } else if (this.applicantInfo && this.applicantInfo.fullName) {
-        doctorName = this.applicantInfo.fullName;
       }
 
       const textToEmbed = `Bác sĩ ${doctorName}, chuyên khoa ${specName}. Kinh nghiệm thực tế ${this.experience} năm. Thông tin chuyên môn và điều trị: ${this.bio || "Không có"}`;
 
+      // GỌI HÀM: Sinh vector embedding từ AI Service
       const vectorData = await generateEmbedding(textToEmbed);
 
       if (vectorData && vectorData.length === 768) {
@@ -184,6 +153,7 @@ doctorProfileSchema.pre("save", async function () {
   }
 });
 
+// Indexes
 doctorProfileSchema.index({ status: 1 });
 
 const DoctorProfile = mongoose.model("DoctorProfile", doctorProfileSchema);

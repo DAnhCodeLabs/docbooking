@@ -7,8 +7,8 @@ Intent: search_service (Tìm kiếm dịch vụ chung)
 Tìm bệnh viện ở khu vực vinh nghệ an.
 Cho tôi xem danh sách chuyên khoa.
 2. Nhóm Intent Tra cứu Bác sĩ & Chuyên khoa (Entity Routing)
-Hệ thống có bao nhiêu bác sĩ chuyên khoa thần kinh
-Có bao nhiêu bác sĩ khoa tiêu hóa.
+Hệ thống có bao nhiêu bác sĩ chuyên khoa mắt
+Có bao nhiêu bác sĩ khoa sản phụ khoa.
 Intent: find_doctors_by_clinic_specialty (Tìm bác sĩ theo cả Viện + Khoa)
 Tại Bệnh viện Hữu nghị Đa khoa Nghệ An có bác sĩ chuyên khoa nội tổng quát nào không?
 Cho tôi xem danh sách lịch hẹn ngày mai.

@@ -219,6 +219,7 @@ export const sendDoctorRejectionEmail = async (email, reason) => {
 export const sendClinicAdminCredentials = async (email, password) => {
   const subject = "Tài khoản quản lý phòng khám trên DocGo";
   const title = "Chào mừng bạn đến với DocGo!";
+  const resetLink = `${process.env.CLIENT_URL || "http://localhost:3000"}/auth/forgot-password`;
 
   const content = `
     <p>Xin chào,</p>
@@ -228,8 +229,11 @@ export const sendClinicAdminCredentials = async (email, password) => {
       <p style="margin:0;"><strong>Mật khẩu tạm thời:</strong> <code style="background:#e9ecef; padding:2px 6px; border-radius:4px;">${password}</code></p>
     </div>
     <div style="background-color:#fff3cd; border:1px solid #ffeeba; border-radius:12px; padding:16px; margin:20px 0;">
-      <strong style="color:#856404;">⚠️ YÊU CẦU BẢO MẬT</strong>
-      <p style="margin:8px 0 0 0; color:#856404;">Bạn <strong>KHÔNG THỂ</strong> sử dụng mật khẩu tạm thời này để đăng nhập lâu dài. Sau lần đăng nhập đầu tiên, hệ thống sẽ yêu cầu bạn đổi mật khẩu mới.</p>
+      <strong style="color:#856404;">⚠️ YÊU CẦU BẮT BUỘC</strong>
+      <p style="margin:8px 0 0 0; color:#856404;">Bạn <strong>KHÔNG THỂ</strong> sử dụng mật khẩu tạm thời này để đăng nhập. Vui lòng truy cập đường dẫn bên dưới để đặt mật khẩu mới:</p>
+      <div style="text-align:center; margin-top:16px;">
+        <a href="${resetLink}" style="background-color:#e67e22; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">ĐỔI MẬT KHẨU NGAY</a>
+      </div>
     </div>
     <p>Trân trọng,<br><strong>Đội ngũ DocGo</strong></p>
   `;

@@ -1,10 +1,15 @@
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import connectDB from "../config/db.js";
 import Review from "../models/Review.js";
 import logger from "../utils/logger.js";
+import dns from "dns";
 
-dotenv.config();
-
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.join(__dirname, "../../.env");
+dotenv.config({ path: envPath });
+dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 const createReviewIndex = async () => {
   try {
     await connectDB();

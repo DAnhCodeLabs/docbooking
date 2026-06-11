@@ -1,3 +1,4 @@
+import FeaturedDoctors from "@/components/FeaturedDoctors";
 import Banner from "./Banner";
 import CategoryGrid from "./CategoryGrid";
 
@@ -6,6 +7,7 @@ function HomePage() {
     <>
       <Banner />
       <CategoryGrid />
+      <FeaturedDoctors />
     </>
   );
 }

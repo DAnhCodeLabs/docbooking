@@ -43,11 +43,11 @@ const AppointmentsTable = ({
           />
           <div className="flex flex-col">
             <span className="font-semibold text-gray-800 leading-tight">
-              {record.patientId.fullName}
+              {record.patientId?.fullName || "Chưa cập nhật"}
             </span>
             <span className="text-xs text-gray-500">
-              {record.patientId.phone || "N/A"} •{" "}
-              {record.patientId.cccd || "N/A"}
+              {record.patientId?.phone || "N/A"} •{" "}
+              {record.patientId?.cccd || "N/A"}
             </span>
           </div>
         </div>
@@ -71,7 +71,7 @@ const AppointmentsTable = ({
             {formatDateUTC(record.scheduleInfo?.date)}
           </span>
           <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded w-fit mt-1 border border-blue-100">
-            {record.slot.startTime} - {record.slot.endTime}
+            {record.slot?.startTime || "N/A"} - {record.slot?.endTime || "N/A"}
           </span>
         </div>
       ),

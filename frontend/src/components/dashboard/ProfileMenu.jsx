@@ -1,9 +1,5 @@
 import { useAuthStore } from "@/stores/authStore";
-import {
-  LogoutOutlined,
-  SettingOutlined,
-  UserOutlined,
-} from "@ant-design/icons";
+import { LogoutOutlined, UserOutlined } from "@ant-design/icons";
 import { Avatar, Dropdown, Space, Typography } from "antd";
 import { useNavigate } from "react-router-dom";
 
@@ -25,12 +21,6 @@ const ProfileMenu = () => {
       label: "Hồ sơ cá nhân",
       icon: <UserOutlined />,
       onClick: () => navigate("/dashboard/profile"),
-    },
-    {
-      key: "settings",
-      label: "Cài đặt hệ thống",
-      icon: <SettingOutlined />,
-      onClick: () => navigate("/dashboard/settings"),
     },
     {
       type: "divider",

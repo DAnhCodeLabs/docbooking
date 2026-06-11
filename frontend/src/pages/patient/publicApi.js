@@ -9,6 +9,7 @@ export const publicApi = {
   getClinics: (params) => httpGet("/clinic-leads/active", params),
   getDoctorById: (id, params = {}) => httpGet(`/doctors/${id}`, { params }),
 
+  getTopRatedDoctors: (params) => httpGet("/doctors/top-rated", params, false),
   getMyAppointments: (params) => httpGet("/appointments/my", params, false),
   cancelAppointment: (id, reason) =>
     httpPatch(`/appointments/${id}/cancel`, { reason }, true),

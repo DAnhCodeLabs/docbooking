@@ -19,6 +19,12 @@ router.get(
   doctorController.getPublicDoctors,
 );
 
+router.get(
+  "/top-rated",
+  validate(doctorValidation.getTopRatedDoctorsSchema),
+  doctorController.getTopRatedDoctors,
+);
+
 // ==================== CLINIC ADMIN ROUTES (tĩnh, phải đặt trước route động /:id) ====================
 router.get(
   "/clinic",

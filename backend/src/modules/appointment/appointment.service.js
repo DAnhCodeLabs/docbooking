@@ -381,11 +381,12 @@ export const getMyAppointments = async (userId, query) => {
   }
 
   // 10. Định dạng lại
+  // ✅ FIX: Đảm bảo patientInfo luôn có giá trị (tối thiểu là object trống)
   const formattedAppointments = appointments.map((app) => ({
     ...app,
     slot: app.slotInfo,
     doctor: app.doctorInfo,
-    patientId: app.patientInfo,
+    patientId: app.patientInfo || {}, // Fallback để tránh undefined
   }));
 
   return {
@@ -987,11 +988,12 @@ export const getAppointments = async (user, query) => {
   }
 
   // Định dạng chuẩn lại kết quả trả về
+  // ✅ FIX: Đảm bảo patientInfo luôn có giá trị (tối thiểu là object trống)
   const formattedAppointments = appointments.map((app) => ({
     ...app,
     slot: app.slotInfo,
     doctor: app.doctorInfo,
-    patientId: app.patientInfo,
+    patientId: app.patientInfo || {}, // Fallback để tránh undefined
   }));
 
   return {
@@ -1099,10 +1101,10 @@ export const getAppointmentById = async (user, appointmentId) => {
   }
 
   // Normalize response format to match list endpoints for consistency
-  // Rename patientProfile to patientId for consistent field naming
+  // ✅ FIX: Rename patientProfile to patientId with fallback to prevent undefined
   const normalizedResult = {
     ...result,
-    patientId: result.patientProfile,
+    patientId: result.patientProfile || {},
   };
   delete normalizedResult.patientProfile;
 

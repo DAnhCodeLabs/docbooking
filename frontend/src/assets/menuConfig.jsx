@@ -51,16 +51,6 @@ export const adminMenu = [
     icon: <MessageOutlined />,
     label: "Chatbot quản trị",
   },
-  {
-    key: "/admin/reports", // Sửa từ /dashboard/admin/reports
-    icon: <BarChartOutlined />,
-    label: "Báo cáo thống kê",
-  },
-  {
-    key: "/admin/settings", // Sửa từ /dashboard/admin/settings
-    icon: <SettingOutlined />,
-    label: "Cài đặt hệ thống",
-  },
 ];
 
 // ==========================================

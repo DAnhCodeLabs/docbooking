@@ -268,3 +268,16 @@ export const getDoctorDashboard = asyncHandler(async (req, res) => {
 
   sendSuccess(res, StatusCodes.OK, "Lấy dữ liệu thống kê thành công.", stats);
 });
+
+export const getTopRatedDoctors = asyncHandler(async (req, res) => {
+  // Gọi tầng service xử lý dữ liệu tổng hợp
+  const doctors = await doctorService.getTopRatedDoctors(req.query);
+
+  // Trả về response thành công sử dụng util có sẵn của hệ thống
+  sendSuccess(
+    res,
+    StatusCodes.OK,
+    "Lấy danh sách bác sĩ nổi bật thành công.",
+    doctors,
+  );
+});

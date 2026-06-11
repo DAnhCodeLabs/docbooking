@@ -64,7 +64,12 @@ const doctorRegisterSchema = z
     experience: z
       .string()
       .optional()
-      .transform((val) => (val ? parseInt(val, 10) : undefined)),
+      .transform((val) => (val ? parseInt(val, 10) : undefined))
+      .refine(
+        (val) => val >= 3 && val <= 20,
+        "Số năm kinh nghiệm phải từ 3 đến 20",
+      ),
+
     licenseNumber: z.string().optional(),
     consultationFee: z
       .string()

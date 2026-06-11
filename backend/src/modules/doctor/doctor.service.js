@@ -22,7 +22,6 @@ import {
 } from "../../utils/email.js";
 import logger from "../../utils/logger.js";
 import * as clinicLeadService from "../clinicLead/clinicLead.service.js";
-import * as reviewService from "../review/review.service.js";
 import * as scheduleService from "../schedule/schedule.service.js";
 
 dayjs.extend(utc);
@@ -1403,4 +1402,145 @@ export const getDoctorDashboardStats = async (doctorId, startDate, endDate) => {
     shiftDistribution,
     topPatients,
   };
+};
+
+/**
+ * Lấy danh sách tối đa 10 bác sĩ xuất sắc (Rating >= 4.0) ra trang chủ
+ * @param {Object} query - Chứa tham số cấu hình hiển thị từ Request
+ * @returns {Promise<Array>} Mảng danh sách bác sĩ nổi bật đạt chuẩn
+ */
+export const getTopRatedDoctors = async (query = {}) => {
+  const limit = query.limit ? parseInt(query.limit, 10) : 10;
+
+  // ==================== [HỆ THỐNG DEBUG TELEMETRY] ====================
+  // Bắt đầu quét toàn bộ collection để tìm điểm đứt gãy dữ liệu
+  console.log("\n================ [DEBUG] BẮT ĐẦU TRUY VẾT DỮ LIỆU TOP-RATED ===============");
+
+  const totalProfiles = await DoctorProfile.countDocuments();
+  console.log(`[BƯỚC 0] Tổng số hồ sơ bác sĩ trong Database: ${totalProfiles}`);
+
+  const activeDoctors = await DoctorProfile.countDocuments({ status: "active" });
+  console.log(`[BƯỚC 1] Bác sĩ đang ở trạng thái 'active': ${activeDoctors} (Cần > 0)`);
+
+  const doctorsWithReviews = await DoctorProfile.countDocuments({ status: "active", totalReviews: { $gt: 0 } });
+  console.log(`[BƯỚC 2] Bác sĩ 'active' VÀ có lượt đánh giá (totalReviews > 0): ${doctorsWithReviews} (Cần > 0)`);
+
+  if (doctorsWithReviews === 0) {
+    console.log("👉 KẾT LUẬN GỐC RỄ: Mảng trả về rỗng [] là HOÀN TOÀN ĐÚNG LOGIC NGHIỆP VỤ!");
+    console.log("👉 LÝ DO: Database của bạn hiện chưa có bác sĩ nào được đánh giá.");
+    console.log("👉 CÁCH FIX (Test): Hãy vào DB sửa tay trường 'totalReviews' = 5 và 'sumRating' = 25 cho 1 bác sĩ, hoặc thực hiện flow Bệnh nhân Đặt lịch -> Khám xong -> Viết Review.\n");
+  } else {
+    // Nếu có bác sĩ có review, kiểm tra xem họ có đủ 4.0 sao không
+    const highRatedDoctors = await DoctorProfile.aggregate([
+      { $match: { status: "active", totalReviews: { $gt: 0 } } },
+      { $addFields: { averageRating: { $divide: ["$sumRating", "$totalReviews"] } } },
+      { $match: { averageRating: { $gte: 4.0 } } },
+      { $count: "count" }
+    ]);
+    const validCount = highRatedDoctors[0]?.count || 0;
+    console.log(`[BƯỚC 3] Bác sĩ thỏa mãn điều kiện >= 4.0 sao: ${validCount} (Cần > 0)`);
+  }
+  console.log("===========================================================================\n");
+  // ====================================================================
+
+  const pipeline = [
+    {
+      $match: {
+        status: "active",
+        totalReviews: { $gt: 0 }
+      }
+    },
+    {
+      $addFields: {
+        averageRating: { $divide: ["$sumRating", "$totalReviews"] }
+      }
+    },
+    {
+      $match: {
+        averageRating: { $gte: 4.0 }
+      }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "user",
+        foreignField: "_id",
+        as: "userInfo"
+      }
+    },
+    { $unwind: "$userInfo" },
+    {
+      $match: {
+        "userInfo.status": "active",
+        "userInfo.role": "doctor"
+      }
+    },
+    {
+      $lookup: {
+        from: "specialties",
+        localField: "specialty",
+        foreignField: "_id",
+        as: "specialtyInfo"
+      }
+    },
+    { $unwind: "$specialtyInfo" },
+    {
+      $match: {
+        "specialtyInfo.status": "active"
+      }
+    },
+    {
+      $lookup: {
+        from: "clinicleads",
+        localField: "clinicId",
+        foreignField: "_id",
+        as: "clinicInfo"
+      }
+    },
+    {
+      $unwind: {
+        path: "$clinicInfo",
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $sort: {
+        averageRating: -1,
+        totalReviews: -1
+      }
+    },
+    { $limit: limit },
+    {
+      $project: {
+        _id: 1,
+        experience: 1,
+        consultationFee: 1,
+        bio: 1,
+        avatar: 1,
+        customClinicName: 1,
+        totalReviews: 1,
+        sumRating: 1,
+        averageRating: { $round: ["$averageRating", 1] },
+        user: {
+          _id: "$userInfo._id",
+          fullName: "$userInfo.fullName",
+          avatar: "$userInfo.avatar"
+        },
+        specialty: {
+          _id: "$specialtyInfo._id",
+          name: "$specialtyInfo.name",
+          image: "$specialtyInfo.image"
+        },
+        clinicId: {
+          _id: "$clinicInfo._id",
+          clinicName: "$clinicInfo.clinicName",
+          address: "$clinicInfo.address"
+        }
+      }
+    }
+  ];
+  
+  const doctors = await DoctorProfile.aggregate(pipeline);
+  console.log(`[KẾT QUẢ PIPELINE] Số lượng bác sĩ trả về cho Frontend: ${doctors.length} bác sĩ\n`);
+  return doctors;
 };

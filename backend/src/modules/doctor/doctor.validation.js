@@ -242,3 +242,16 @@ export const getDoctorDashboardSchema = z.object({
       },
     ),
 });
+
+export const getTopRatedDoctorsSchema = z.object({
+  query: z.object({
+    limit: z
+      .string()
+      .optional()
+      .transform((val) => (val ? parseInt(val, 10) : 10))
+      .refine((val) => val >= 1 && val <= 20, {
+        message:
+          "Số lượng bác sĩ nổi bật (limit) phải nằm trong khoảng từ 1 đến 20",
+      }),
+  }),
+});

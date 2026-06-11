@@ -110,15 +110,15 @@ const ManagePendingDoctors = () => {
   // Cấu hình Cột
   const columns = [
     {
-      title: "Hồ sơ ứng viên",
+      title: <div className="text-red-300!">Hồ sơ ứng viên</div>,
       key: "candidate",
       render: (_, record) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 bg-red-500!">
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shrink-0 border border-slate-200">
             <UserOutlined />
           </div>
           <div>
-            <div className="font-semibold text-slate-800">
+            <div className="font-semibold text-white!">
               {record.user?.fullName || "—"}
             </div>
             <div className="text-xs text-slate-500 font-medium">

@@ -19,8 +19,8 @@ const statusMap = {
 const AppointmentDetailDrawer = ({ visible, onClose, appointment }) => {
   if (!appointment) return null;
 
-  // Defensive checks for patient data
-  const patientData = appointment.patientId || appointment.patientProfile;
+  // ✅ FIX: Defensive checks for patient data with fallback to empty object
+  const patientData = appointment.patientId || appointment.patientProfile || {};
   const patientName = patientData?.fullName || "Chưa cập nhật";
   const patientPhone = patientData?.phone || "N/A";
   const patientCCCD = patientData?.cccd || "Chưa cập nhật";
